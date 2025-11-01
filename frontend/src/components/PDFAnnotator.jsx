@@ -1,0 +1,500 @@
+import { useState, useEffect, useRef } from 'react'
+import { FiFileText, FiMessageSquare, FiX, FiLoader, FiChevronLeft, FiChevronRight, FiZoomIn, FiZoomOut, FiPlus } from 'react-icons/fi'
+import axios from 'axios'
+import { Document, Page, pdfjs } from 'react-pdf'
+import ReactMarkdown from 'react-markdown'
+
+// Configure PDF.js worker - use local copy
+pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
+
+const API_URL = 'http://localhost:8000'
+
+// Preset annotation colors
+const ANNOTATION_COLORS = [
+  { name: 'Yellow', value: '#ffeb3b' },
+  { name: 'Green', value: '#4caf50' },
+  { name: 'Blue', value: '#2196f3' },
+  { name: 'Pink', value: '#e91e63' },
+  { name: 'Purple', value: '#9c27b0' },
+  { name: 'Orange', value: '#ff9800' },
+  { name: 'Red', value: '#f44336' },
+  { name: 'Cyan', value: '#00bcd4' }
+]
+
+function PDFAnnotator({ documents, notebookId }) {
+  const [selectedDoc, setSelectedDoc] = useState(null)
+  const [annotations, setAnnotations] = useState([])
+  const [showQueryDialog, setShowQueryDialog] = useState(false)
+  const [currentAnnotation, setCurrentAnnotation] = useState(null)
+  const [query, setQuery] = useState('')
+  const [aiResponse, setAiResponse] = useState(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const [pdfUrl, setPdfUrl] = useState('')
+
+  // PDF viewing state
+  const [numPages, setNumPages] = useState(null)
+  const [pageNumber, setPageNumber] = useState(1)
+  const [scale, setScale] = useState(1.2)
+  const [selectedText, setSelectedText] = useState(null)
+  const [showAnnotationForm, setShowAnnotationForm] = useState(false)
+  const [annotationNote, setAnnotationNote] = useState('')
+  const [annotationColor, setAnnotationColor] = useState('#ffeb3b')
+
+  const pageRef = useRef(null)
+
+  useEffect(() => {
+    if (selectedDoc && notebookId) {
+      // Generate PDF URL for viewing
+      const url = `${API_URL}/documents/${notebookId}/${selectedDoc.id}/pdf`
+      setPdfUrl(url)
+      setPageNumber(1)
+      loadAnnotations()
+    }
+  }, [selectedDoc, notebookId])
+
+  const loadAnnotations = async () => {
+    try {
+      const response = await axios.get(
+        `${API_URL}/annotations/${notebookId}?document_id=${selectedDoc.id}`
+      )
+      setAnnotations(response.data.annotations)
+    } catch (error) {
+      console.error('Error loading annotations:', error)
+    }
+  }
+
+  const onDocumentLoadSuccess = ({ numPages }) => {
+    setNumPages(numPages)
+    setPageNumber(1)
+  }
+
+  const changePage = (offset) => {
+    setPageNumber(prevPageNumber => Math.min(Math.max(1, prevPageNumber + offset), numPages))
+  }
+
+  const handleTextSelection = (event) => {
+    // Small delay to ensure selection is complete
+    setTimeout(() => {
+      const selection = window.getSelection()
+      const text = selection.toString().trim()
+
+      console.log('Text selected:', text)
+
+      if (text && text.length > 0) {
+        try {
+          const range = selection.getRangeAt(0)
+          const rect = range.getBoundingClientRect()
+
+          // Get the PDF page canvas element to calculate relative position
+          const pageCanvas = document.querySelector('.react-pdf__Page__canvas')
+          if (pageCanvas) {
+            const canvasRect = pageCanvas.getBoundingClientRect()
+
+            // Calculate position relative to the PDF page (not scaled)
+            const relativePosition = {
+              x: (rect.left - canvasRect.left) / scale,
+              y: (rect.top - canvasRect.top) / scale,
+              width: rect.width / scale,
+              height: rect.height / scale
+            }
+
+            console.log('Selection position (relative to page):', relativePosition)
+            console.log('Current scale:', scale)
+
+            setSelectedText({
+              text: text,
+              position: relativePosition
+            })
+            setShowAnnotationForm(true)
+          }
+        } catch (error) {
+          console.error('Error capturing selection:', error)
+        }
+      }
+    }, 10)
+  }
+
+  const createAnnotation = async () => {
+    if (!selectedText || !selectedDoc) return
+
+    try {
+      const response = await axios.post(`${API_URL}/annotations`, {
+        notebook_id: notebookId,
+        document_id: selectedDoc.id,
+        page_number: pageNumber,
+        highlighted_text: selectedText.text,
+        position: selectedText.position,
+        color: annotationColor,
+        note: annotationNote || null
+      })
+
+      await loadAnnotations()
+      cancelAnnotation()
+      alert('Annotation created successfully!')
+    } catch (error) {
+      console.error('Error creating annotation:', error)
+      alert('Failed to create annotation')
+    }
+  }
+
+  const cancelAnnotation = () => {
+    setSelectedText(null)
+    setShowAnnotationForm(false)
+    setAnnotationNote('')
+    setAnnotationColor('#ffeb3b')
+    window.getSelection().removeAllRanges()
+  }
+
+  const deleteAnnotation = async (annotationId) => {
+    if (!window.confirm('Delete this annotation?')) return
+
+    try {
+      await axios.delete(`${API_URL}/annotations/${annotationId}`)
+      await loadAnnotations()
+    } catch (error) {
+      console.error('Error deleting annotation:', error)
+      alert('Failed to delete annotation')
+    }
+  }
+
+  const queryAnnotation = async () => {
+    if (!query.trim() || !currentAnnotation) return
+
+    setIsLoading(true)
+    try {
+      const response = await axios.post(`${API_URL}/annotations/query`, {
+        annotation_id: currentAnnotation.id,
+        question: query
+      })
+
+      setAiResponse(response.data)
+    } catch (error) {
+      console.error('Error querying annotation:', error)
+      alert('Failed to query AI')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const openQueryDialog = (annotation) => {
+    setCurrentAnnotation(annotation)
+    setQuery('')
+    setAiResponse(null)
+    setShowQueryDialog(true)
+  }
+
+  const closeQueryDialog = () => {
+    setShowQueryDialog(false)
+    setCurrentAnnotation(null)
+    setQuery('')
+    setAiResponse(null)
+  }
+
+  const zoomIn = () => setScale(prev => Math.min(prev + 0.2, 3.0))
+  const zoomOut = () => setScale(prev => Math.max(prev - 0.2, 0.5))
+
+  // Filter annotations for current page
+  const currentPageAnnotations = annotations.filter(ann => ann.page_number === pageNumber)
+
+  if (!selectedDoc) {
+    return (
+      <div className="pdf-annotator-container">
+        <div className="pdf-selector">
+          <FiFileText size={64} style={{ opacity: 0.3, marginBottom: '16px' }} />
+          <h2>Select a PDF to View</h2>
+          <p>Choose from your uploaded documents</p>
+
+          {documents.length === 0 ? (
+            <p style={{ color: 'var(--text-secondary)', marginTop: '20px' }}>
+              No documents uploaded yet
+            </p>
+          ) : (
+            <div className="pdf-list">
+              {documents.map((doc) => (
+                <div
+                  key={doc.id}
+                  className="pdf-item"
+                  onClick={() => setSelectedDoc(doc)}
+                >
+                  <FiFileText size={20} />
+                  <div>
+                    <div className="pdf-name">{doc.filename}</div>
+                    <div className="pdf-info">{doc.chunks_count} chunks</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="pdf-annotator-container">
+      <div className="pdf-toolbar">
+        <button className="toolbar-button" onClick={() => setSelectedDoc(null)}>
+          <FiX /> Close
+        </button>
+        <div className="pdf-title">
+          <FiFileText />
+          {selectedDoc.filename}
+        </div>
+        <div className="pdf-controls">
+          <button className="toolbar-button" onClick={zoomOut} title="Zoom Out">
+            <FiZoomOut />
+          </button>
+          <span style={{ padding: '0 8px', fontSize: '13px' }}>
+            {Math.round(scale * 100)}%
+          </span>
+          <button className="toolbar-button" onClick={zoomIn} title="Zoom In">
+            <FiZoomIn />
+          </button>
+          <button className="toolbar-button" onClick={() => changePage(-1)} disabled={pageNumber <= 1}>
+            <FiChevronLeft />
+          </button>
+          <span style={{ padding: '0 8px', fontSize: '13px' }}>
+            {pageNumber} / {numPages || '?'}
+          </span>
+          <button className="toolbar-button" onClick={() => changePage(1)} disabled={pageNumber >= numPages}>
+            <FiChevronRight />
+          </button>
+        </div>
+      </div>
+
+      <div className="pdf-content-wrapper">
+        <div className="pdf-sidebar">
+          <div className="annotation-help-banner">
+            <FiPlus size={16} />
+            <span>Select text in the PDF to create annotations</span>
+          </div>
+          <h3>Annotations ({annotations.length})</h3>
+          <div className="annotations-list">
+            {annotations.length === 0 ? (
+              <p style={{ padding: '16px', color: 'var(--text-secondary)', fontSize: '13px' }}>
+                No annotations yet. Select text in the PDF to create annotations.
+              </p>
+            ) : (
+              annotations.map((ann) => (
+                <div
+                  key={ann.id}
+                  className="annotation-item"
+                  style={{ borderLeftColor: ann.color || 'var(--accent-primary)' }}
+                  onClick={() => {
+                    if (ann.page_number !== pageNumber) {
+                      setPageNumber(ann.page_number)
+                    }
+                  }}
+                >
+                  <div className="annotation-page-badge">
+                    Page {ann.page_number}
+                  </div>
+                  <div className="annotation-text">
+                    "{ann.highlighted_text.substring(0, 100)}..."
+                  </div>
+                  {ann.note && (
+                    <div className="annotation-note">{ann.note}</div>
+                  )}
+                  <div className="annotation-actions">
+                    <button onClick={(e) => { e.stopPropagation(); openQueryDialog(ann); }}>
+                      <FiMessageSquare /> Ask AI
+                    </button>
+                    <button onClick={(e) => { e.stopPropagation(); deleteAnnotation(ann.id); }}>
+                      <FiX /> Delete
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="pdf-viewer-container">
+          <div className="pdf-viewer" ref={pageRef}>
+            {pdfUrl && (
+              <div style={{ position: 'relative', display: 'inline-block' }}>
+                <Document
+                  file={pdfUrl}
+                  onLoadSuccess={onDocumentLoadSuccess}
+                  onLoadError={(error) => {
+                    console.error('PDF Load Error:', error)
+                  }}
+                  loading={
+                    <div style={{ padding: '40px', textAlign: 'center' }}>
+                      <FiLoader className="spin" size={32} />
+                      <p style={{ marginTop: '16px' }}>Loading PDF...</p>
+                    </div>
+                  }
+                  error={
+                    <div style={{ padding: '40px', textAlign: 'center', color: 'var(--error)', maxWidth: '500px', margin: '0 auto' }}>
+                      <FiX size={48} style={{ marginBottom: '16px', opacity: 0.5 }} />
+                      <h3 style={{ marginBottom: '12px' }}>Failed to Load PDF</h3>
+                      <p style={{ fontSize: '14px', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
+                        This document may have been uploaded before PDF viewing was enabled.
+                      </p>
+                      <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginTop: '12px' }}>
+                        Please try re-uploading this PDF file to enable viewing and annotations.
+                      </p>
+                      <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '16px' }}>
+                        Backend: {pdfUrl}
+                      </p>
+                    </div>
+                  }
+                >
+                  <Page
+                    pageNumber={pageNumber}
+                    scale={scale}
+                    renderTextLayer={true}
+                    renderAnnotationLayer={false}
+                    onMouseUp={handleTextSelection}
+                  />
+                </Document>
+
+                {/* Render highlights for current page - positioned relative to the page */}
+                {currentPageAnnotations.map((ann) => (
+                  <div
+                    key={ann.id}
+                    className="pdf-highlight-overlay"
+                    style={{
+                      position: 'absolute',
+                      left: `${ann.position.x * scale}px`,
+                      top: `${ann.position.y * scale}px`,
+                      width: `${ann.position.width * scale}px`,
+                      height: `${ann.position.height * scale}px`,
+                      backgroundColor: ann.color,
+                      opacity: 0.4,
+                      pointerEvents: 'none',
+                      mixBlendMode: 'multiply',
+                      border: `2px solid ${ann.color}`,
+                      boxSizing: 'border-box',
+                      zIndex: 5
+                    }}
+                    title={ann.highlighted_text.substring(0, 100)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Annotation Form */}
+      {showAnnotationForm && selectedText && (
+        <div className="modal-overlay" onClick={cancelAnnotation}>
+          <div className="modal annotation-form-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>
+                <FiPlus /> Create Annotation
+              </h2>
+              <button onClick={cancelAnnotation} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}>
+                <FiX size={20} />
+              </button>
+            </div>
+
+            <div className="modal-body">
+              <div className="form-group">
+                <label>Selected Text</label>
+                <div className="selected-text-preview">
+                  "{selectedText.text}"
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label>Note (Optional)</label>
+                <textarea
+                  className="form-textarea"
+                  value={annotationNote}
+                  onChange={(e) => setAnnotationNote(e.target.value)}
+                  placeholder="Add a note about this text..."
+                  rows={3}
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Highlight Color</label>
+                <div className="color-picker">
+                  {ANNOTATION_COLORS.map((color) => (
+                    <button
+                      key={color.value}
+                      className={`color-option ${annotationColor === color.value ? 'selected' : ''}`}
+                      style={{ backgroundColor: color.value }}
+                      onClick={() => setAnnotationColor(color.value)}
+                      title={color.name}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button className="cancel-button" onClick={cancelAnnotation}>
+                Cancel
+              </button>
+              <button className="confirm-button" onClick={createAnnotation}>
+                Create Annotation
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Query Dialog */}
+      {showQueryDialog && currentAnnotation && (
+        <div className="modal-overlay" onClick={closeQueryDialog}>
+          <div className="modal ask-ai-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Ask AI</h2>
+              <button onClick={closeQueryDialog} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}>
+                <FiX size={20} />
+              </button>
+            </div>
+
+            <div className="modal-body">
+              <div className="form-group">
+                <label>Highlighted Text</label>
+                <div className="selected-text-preview">
+                  "{currentAnnotation.highlighted_text}"
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label>Your Question</label>
+                <input
+                  type="text"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="What would you like to know about this text?"
+                  onKeyDown={(e) => e.key === 'Enter' && queryAnnotation()}
+                />
+              </div>
+
+              {aiResponse && (
+                <div className="ai-response-box">
+                  <h4>AI Response</h4>
+                  <div className="markdown-content">
+                    <ReactMarkdown>{aiResponse.answer}</ReactMarkdown>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="modal-footer">
+              <button className="cancel-button" onClick={closeQueryDialog}>
+                Close
+              </button>
+              <button
+                className="confirm-button"
+                onClick={queryAnnotation}
+                disabled={isLoading || !query.trim()}
+              >
+                {isLoading ? <><FiLoader className="spin" /> Asking...</> : 'Ask AI'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default PDFAnnotator

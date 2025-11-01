@@ -1,0 +1,542 @@
+/**
+ * PRISM - Main Application Component
+ *
+ * This is the root component that manages the entire application state and routing.
+ * It handles multiple modes of operation:
+ * - Chat: AI-powered Q&A about uploaded documents
+ * - Assessment: Quiz and mock test generation
+ * - Notes: Rich text note-taking
+ * - PDF: PDF viewing and annotation
+ * - Interview: Virtual interview practice
+ * - Doomscroll: Swipeable learning cards
+ *
+ * State Management:
+ * - Uses NotebookContext for global notebook state
+ * - Local state for documents, messages, and UI modes
+ *
+ * @author Srikar
+ */
+
+import { useState, useRef, useEffect } from 'react'
+import { FiUpload, FiSend, FiTrash2, FiFile, FiMessageSquare, FiAward, FiFileText, FiArrowLeft, FiEdit3, FiEye, FiMic, FiTrendingUp } from 'react-icons/fi'
+import axios from 'axios'
+import FileUploadModal from './components/FileUploadModal'
+import Quiz from './components/Quiz'
+import MockTest from './components/MockTest'
+import Notes from './components/Notes'
+import PDFAnnotator from './components/PDFAnnotator'
+import VirtualInterview from './components/VirtualInterview'
+import Doomscroll from './components/Doomscroll'
+import Library from './components/Library'
+import { NotebookProvider, useNotebook } from './contexts/NotebookContext'
+import './index.css'
+import ReactMarkdown from 'react-markdown'
+
+// Backend API base URL
+const API_URL = 'http://localhost:8000'
+
+/**
+ * AppContent Component
+ * Main application logic wrapped by NotebookProvider
+ */
+function AppContent() {
+  const { selectedNotebook, selectNotebook, clearNotebook } = useNotebook()
+  const [mode, setMode] = useState('chat') // 'chat', 'assessment', 'notes', 'pdf', 'interview', 'doomscroll'
+  const [assessmentType, setAssessmentType] = useState(null) // 'quiz' or 'mocktest'
+  const [documents, setDocuments] = useState([])
+  const [selectedDocIds, setSelectedDocIds] = useState([])
+  const [messages, setMessages] = useState([])
+  const [inputValue, setInputValue] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+  const [showUploadModal, setShowUploadModal] = useState(false)
+  const chatEndRef = useRef(null)
+  const textareaRef = useRef(null)
+
+  useEffect(() => {
+    if (selectedNotebook) {
+      fetchDocuments()
+      loadChatHistory()
+    } else {
+      setMessages([])
+    }
+  }, [selectedNotebook])
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto'
+      textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px'
+    }
+  }, [inputValue])
+
+  const fetchDocuments = async () => {
+    if (!selectedNotebook) return
+
+    try {
+      const response = await axios.get(`${API_URL}/documents/${selectedNotebook.id}`)
+      setDocuments(response.data.documents)
+    } catch (error) {
+      console.error('Error fetching documents:', error)
+    }
+  }
+
+  const loadChatHistory = async () => {
+    if (!selectedNotebook) return
+
+    try {
+      const response = await axios.get(`${API_URL}/chat-history/${selectedNotebook.id}`)
+      const history = response.data.messages.map(msg => ({
+        role: msg.role,
+        content: msg.content,
+        ...(msg.sources && { sources: msg.sources })
+      }))
+      setMessages(history)
+    } catch (error) {
+      console.error('Error loading chat history:', error)
+      setMessages([]) // Set empty array on error
+    }
+  }
+
+  const saveChatMessage = async (message) => {
+    if (!selectedNotebook) return
+
+    try {
+      await axios.post(`${API_URL}/chat-history`, {
+        notebook_id: selectedNotebook.id,
+        messages: [message]
+      })
+    } catch (error) {
+      console.error('Error saving chat message:', error)
+    }
+  }
+
+  const handleUploadSuccess = () => {
+    fetchDocuments()
+    setShowUploadModal(false)
+  }
+
+  const handleDeleteDocument = async (docId) => {
+    if (!selectedNotebook) return
+
+    try {
+      await axios.delete(`${API_URL}/documents/${selectedNotebook.id}/${docId}`)
+      setDocuments(documents.filter(doc => doc.id !== docId))
+      setSelectedDocIds(selectedDocIds.filter(id => id !== docId))
+    } catch (error) {
+      console.error('Error deleting document:', error)
+    }
+  }
+
+  const handleClearAll = async () => {
+    if (!selectedNotebook) return
+
+    if (!window.confirm('Are you sure you want to delete all documents in this notebook?')) {
+      return
+    }
+
+    try {
+      await axios.delete(`${API_URL}/documents/${selectedNotebook.id}`)
+      setDocuments([])
+      setSelectedDocIds([])
+      setMessages([])
+    } catch (error) {
+      console.error('Error clearing documents:', error)
+    }
+  }
+
+  const toggleDocumentSelection = (docId) => {
+    setSelectedDocIds(prev => {
+      if (prev.includes(docId)) {
+        return prev.filter(id => id !== docId)
+      } else {
+        return [...prev, docId]
+      }
+    })
+  }
+
+  const handleAskQuestion = async (e) => {
+    e.preventDefault()
+
+    if (!inputValue.trim() || isLoading) return
+
+    if (documents.length === 0) {
+      alert('Please upload at least one PDF document first')
+      return
+    }
+
+    const userMessage = {
+      role: 'user',
+      content: inputValue
+    }
+
+    setMessages(prev => [...prev, userMessage])
+    saveChatMessage(userMessage)
+    setInputValue('')
+    setIsLoading(true)
+
+    try {
+      const response = await axios.post(`${API_URL}/ask`, {
+        question: inputValue,
+        notebook_id: selectedNotebook.id,
+        document_ids: selectedDocIds.length > 0 ? selectedDocIds : null
+      })
+
+      const assistantMessage = {
+        role: 'assistant',
+        content: response.data.answer,
+        sources: response.data.sources
+      }
+
+      setMessages(prev => [...prev, assistantMessage])
+      saveChatMessage({
+        role: 'assistant',
+        content: response.data.answer
+      })
+    } catch (error) {
+      console.error('Error asking question:', error)
+      const errorMessage = {
+        role: 'assistant',
+        content: 'Sorry, there was an error processing your question. Please try again.'
+      }
+      setMessages(prev => [...prev, errorMessage])
+      saveChatMessage(errorMessage)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleAskQuestion(e)
+    }
+  }
+
+  // Show Library if no notebook is selected
+  if (!selectedNotebook) {
+    return <Library onSelectNotebook={selectNotebook} />
+  }
+
+  return (
+    <div className="app">
+      {/* PRISM App Header */}
+      <div className="app-header">
+        <div className="app-logo-section">
+          <img src="/logo.png" alt="PRISM Logo" className="app-logo" />
+          <h1 className="app-title">PRISM</h1>
+        </div>
+        <div className="app-subtitle">AI-Powered Learning Platform</div>
+      </div>
+
+      <div className="app-body">
+        <div className="sidebar">
+        <div className="sidebar-header">
+          <button
+            onClick={clearNotebook}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--accent)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: '13px',
+              fontWeight: 500,
+              marginBottom: '12px',
+              padding: '4px 0'
+            }}
+          >
+            <FiArrowLeft size={16} />
+            Back to Library
+          </button>
+          <h1>{selectedNotebook.icon} {selectedNotebook.name}</h1>
+          <p>Ask questions about your documents</p>
+        </div>
+
+        <div className="mode-switcher">
+          <button
+            className={`mode-button ${mode === 'chat' ? 'active' : ''}`}
+            onClick={() => {
+              setMode('chat')
+              setAssessmentType(null)
+            }}
+          >
+            <FiMessageSquare />
+            Chat
+          </button>
+          <button
+            className={`mode-button ${mode === 'notes' ? 'active' : ''}`}
+            onClick={() => {
+              setMode('notes')
+              setAssessmentType(null)
+            }}
+          >
+            <FiEdit3 />
+            Notes
+          </button>
+          <button
+            className={`mode-button ${mode === 'pdf' ? 'active' : ''}`}
+            onClick={() => {
+              setMode('pdf')
+              setAssessmentType(null)
+            }}
+          >
+            <FiEye />
+            PDF
+          </button>
+          <button
+            className={`mode-button ${mode === 'assessment' ? 'active' : ''}`}
+            onClick={() => {
+              setMode('assessment')
+              setAssessmentType(null)
+            }}
+          >
+            <FiAward />
+            Assessment
+          </button>
+          <button
+            className={`mode-button ${mode === 'interview' ? 'active' : ''}`}
+            onClick={() => {
+              setMode('interview')
+              setAssessmentType(null)
+            }}
+          >
+            <FiMic />
+            Interview
+          </button>
+          <button
+            className={`mode-button ${mode === 'doomscroll' ? 'active' : ''}`}
+            onClick={() => {
+              setMode('doomscroll')
+              setAssessmentType(null)
+            }}
+          >
+            <FiTrendingUp />
+            Scroll
+          </button>
+        </div>
+
+        <div className="upload-section">
+          <button className="upload-button" onClick={() => setShowUploadModal(true)}>
+            <FiUpload />
+            Upload PDFs
+          </button>
+        </div>
+
+        <div className="documents-list">
+          <h3>Documents ({documents.length})</h3>
+          {documents.length === 0 ? (
+            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '8px' }}>
+              No documents uploaded yet
+            </p>
+          ) : (
+            documents.map(doc => (
+              <div
+                key={doc.id}
+                className={`document-item ${selectedDocIds.includes(doc.id) ? 'selected' : ''}`}
+                onClick={() => toggleDocumentSelection(doc.id)}
+              >
+                <div className="document-name">
+                  <FiFile style={{ display: 'inline', marginRight: '6px' }} />
+                  {doc.filename}
+                </div>
+                <div className="document-info">
+                  <span>{doc.chunks_count} chunks</span>
+                  <button
+                    className="delete-button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleDeleteDocument(doc.id)
+                    }}
+                  >
+                    <FiTrash2 size={14} />
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {documents.length > 0 && (
+          <button className="clear-all-button" onClick={handleClearAll}>
+            Clear All Documents
+          </button>
+        )}
+      </div>
+
+      <div className="main-content">
+        {mode === 'chat' ? (
+          <>
+            <div className="chat-container">
+
+              {messages.length === 0 ? (
+                <div className="empty-state">
+                  <div className="empty-state-icon">
+                    <FiMessageSquare />
+                  </div>
+                  <h2>Ask anything about your documents</h2>
+                  <p>
+                    Upload PDF documents and ask questions. The AI will search through your documents
+                    and provide accurate answers based on the content.
+                  </p>
+                </div>
+              ) : (
+                <div className="messages">
+                  {messages.map((message, index) => (
+                    <div key={index} className={`message ${message.role}`}>
+                      <div className="message-avatar">
+                        {message.role === 'user' ? '👤' : '🤖'}
+                      </div>
+                      <div className="message-content">
+                        <div className="message-markdown">
+                          <ReactMarkdown>{message.content}</ReactMarkdown>
+                        </div>
+                        {message.sources && message.sources.length > 0 && (
+                          <div className="sources">
+                            <div className="sources-title">Sources:</div>
+                            {message.sources.map((source, idx) => (
+                              <div key={idx} className="source-item">
+                                {source.filename} (chunk {source.chunk_index + 1}) - Score: {(source.score * 100).toFixed(1)}%
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {isLoading && (
+                    <div className="message assistant">
+                      <div className="message-avatar">🤖</div>
+                      <div className="message-content">
+                        <div className="loading">
+                          <span>Thinking</span>
+                          <div className="loading-dots">
+                            <div className="loading-dot"></div>
+                            <div className="loading-dot"></div>
+                            <div className="loading-dot"></div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  <div ref={chatEndRef} />
+                </div>
+              )}
+            </div>
+
+            <div className="input-area">
+              <div className="input-container">
+                <form onSubmit={handleAskQuestion}>
+                  <div className="input-wrapper">
+                    <textarea
+                      ref={textareaRef}
+                      value={inputValue}
+                      onChange={(e) => setInputValue(e.target.value)}
+                      onKeyDown={handleKeyDown}
+                      placeholder={
+                        documents.length === 0
+                          ? "Upload PDFs to start asking questions..."
+                          : "Ask a question about your documents..."
+                      }
+                      disabled={isLoading || documents.length === 0}
+                      rows={1}
+                    />
+                    <button
+                      type="submit"
+                      className="send-button"
+                      disabled={!inputValue.trim() || isLoading || documents.length === 0}
+                    >
+                      <FiSend />
+                      Send
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </>
+        ) : mode === 'notes' ? (
+          <Notes documents={documents} selectedDocIds={selectedDocIds} notebookId={selectedNotebook.id} />
+        ) : mode === 'pdf' ? (
+          <PDFAnnotator documents={documents} notebookId={selectedNotebook.id} />
+        ) : mode === 'assessment' ? (
+          assessmentType === 'quiz' ? (
+            <Quiz documents={documents} selectedDocIds={selectedDocIds} notebookId={selectedNotebook.id} />
+          ) : assessmentType === 'mocktest' ? (
+            <MockTest documents={documents} selectedDocIds={selectedDocIds} notebookId={selectedNotebook.id} />
+          ) : (
+            <div className="assessment-selector-container">
+              <div className="assessment-selector">
+                <h2>Choose Assessment Type</h2>
+                <p>Select the type of assessment you'd like to take</p>
+
+                <div className="assessment-options">
+                  <div
+                    className="assessment-option-card"
+                    onClick={() => setAssessmentType('quiz')}
+                  >
+                    <div className="assessment-icon">
+                      <FiAward size={48} />
+                    </div>
+                    <h3>Quick Quiz</h3>
+                    <p>Multiple choice questions to test your knowledge quickly</p>
+                    <ul>
+                      <li>Multiple choice format</li>
+                      <li>Instant feedback</li>
+                      <li>5-20 questions</li>
+                      <li>Topic-based scoring</li>
+                    </ul>
+                  </div>
+
+                  <div
+                    className="assessment-option-card"
+                    onClick={() => setAssessmentType('mocktest')}
+                  >
+                    <div className="assessment-icon">
+                      <FiFileText size={48} />
+                    </div>
+                    <h3>Mock Test</h3>
+                    <p>Comprehensive test with multiple question types</p>
+                    <ul>
+                      <li>Theory questions</li>
+                      <li>Coding problems</li>
+                      <li>Reordering tasks</li>
+                      <li>Detailed evaluation</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )
+        ) : mode === 'interview' ? (
+          <VirtualInterview notebookId={selectedNotebook.id} />
+        ) : mode === 'doomscroll' ? (
+          <Doomscroll documents={documents} notebookId={selectedNotebook.id} />
+        ) : null}
+      </div>
+      </div>
+
+      {showUploadModal && (
+        <FileUploadModal
+          onClose={() => setShowUploadModal(false)}
+          onSuccess={handleUploadSuccess}
+          notebookId={selectedNotebook.id}
+        />
+      )}
+    </div>
+  )
+}
+
+// Wrapper component with NotebookProvider
+function App() {
+  return (
+    <NotebookProvider>
+      <AppContent />
+    </NotebookProvider>
+  )
+}
+
+export default App
