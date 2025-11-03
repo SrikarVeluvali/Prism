@@ -183,54 +183,60 @@ function Library({ onSelectNotebook }) {
             </button>
           </div>
         ) : (
-          <div className="notebooks-grid">
-            {notebooks.map((notebook) => (
-              <div
-                key={notebook.id}
-                className="notebook-card"
-                onClick={() => onSelectNotebook(notebook)}
-                style={{ '--notebook-color': notebook.color }}
-              >
-                <div className="notebook-card-header">
-                  <div className="notebook-icon" style={{ backgroundColor: notebook.color }}>
-                    <span>{notebook.icon}</span>
-                  </div>
-                  <div className="notebook-actions">
-                    <button
-                      className="notebook-action-btn"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        openEditModal(notebook)
-                      }}
-                      title="Edit notebook"
-                    >
-                      <FiEdit2 size={14} />
-                    </button>
-                    <button
-                      className="notebook-action-btn delete"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        deleteNotebook(notebook.id)
-                      }}
-                      title="Delete notebook"
-                    >
-                      <FiTrash2 size={14} />
-                    </button>
-                  </div>
-                </div>
+          <div className="bookshelf-container">
+            <div className="bookshelf-shelf">
+              <div className="notebooks-bookshelf" style={{ display: 'flex', flexDirection: 'row', gap: '8px', flexWrap: 'nowrap' }}>
+                {notebooks.map((notebook) => (
+                  <div
+                    key={notebook.id}
+                    className="book-spine"
+                    onClick={() => onSelectNotebook(notebook)}
+                    style={{
+                      '--notebook-color': notebook.color,
+                      flexShrink: 0,
+                      flexGrow: 0,
+                      minWidth: '60px',
+                      maxWidth: '60px',
+                      width: '60px'
+                    }}
+                  >
+                    <div className="book-actions">
+                      <button
+                        className="book-action-btn"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          openEditModal(notebook)
+                        }}
+                        title="Edit notebook"
+                      >
+                        <FiEdit2 size={14} />
+                      </button>
+                      <button
+                        className="book-action-btn delete"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          deleteNotebook(notebook.id)
+                        }}
+                        title="Delete notebook"
+                      >
+                        <FiTrash2 size={14} />
+                      </button>
+                    </div>
 
-                <div className="notebook-card-body">
-                  <h3 className="notebook-title">{notebook.name}</h3>
-                  <p className="notebook-meta">
-                    {notebook.document_count || 0} {notebook.document_count === 1 ? 'document' : 'documents'}
-                  </p>
-                </div>
+                    <div className="book-icon">{notebook.icon}</div>
 
-                <div className="notebook-card-footer">
-                  <span className="notebook-open-text">Open →</span>
-                </div>
+                    <div className="book-title-container">
+                      <span className="book-title">{notebook.name}</span>
+                    </div>
+
+                    <div className="book-count">
+                      <span className="book-count-number">{notebook.document_count || 0}</span>
+                      <span className="book-count-label">docs</span>
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
           </div>
         )}
       </main>

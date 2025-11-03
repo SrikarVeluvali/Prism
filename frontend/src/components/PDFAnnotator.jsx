@@ -3,6 +3,9 @@ import { FiFileText, FiMessageSquare, FiX, FiLoader, FiChevronLeft, FiChevronRig
 import axios from 'axios'
 import { Document, Page, pdfjs } from 'react-pdf'
 import ReactMarkdown from 'react-markdown'
+import NotificationModal from './NotificationModal'
+import LoadingSpinner from './LoadingSpinner'
+import { useNotification } from '../hooks/useNotification'
 
 // Configure PDF.js worker - use local copy
 pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
@@ -41,6 +44,15 @@ function PDFAnnotator({ documents, notebookId }) {
   const [annotationColor, setAnnotationColor] = useState('#ffeb3b')
 
   const pageRef = useRef(null)
+
+  // Notification modal
+  const {
+    notification,
+    closeNotification,
+    showError,
+    showSuccess,
+    showConfirm
+  } = useNotification()
 
   useEffect(() => {
     if (selectedDoc && notebookId) {
@@ -130,10 +142,10 @@ function PDFAnnotator({ documents, notebookId }) {
 
       await loadAnnotations()
       cancelAnnotation()
-      alert('Annotation created successfully!')
+      showSuccess('Success', 'Annotation created successfully!')
     } catch (error) {
       console.error('Error creating annotation:', error)
-      alert('Failed to create annotation')
+      showError('Error', 'Failed to create annotation. Please try again.')
     }
   }
 
@@ -146,15 +158,22 @@ function PDFAnnotator({ documents, notebookId }) {
   }
 
   const deleteAnnotation = async (annotationId) => {
-    if (!window.confirm('Delete this annotation?')) return
-
-    try {
-      await axios.delete(`${API_URL}/annotations/${annotationId}`)
-      await loadAnnotations()
-    } catch (error) {
-      console.error('Error deleting annotation:', error)
-      alert('Failed to delete annotation')
-    }
+    showConfirm(
+      'Delete Annotation',
+      'Are you sure you want to delete this annotation?',
+      async () => {
+        try {
+          await axios.delete(`${API_URL}/annotations/${annotationId}`)
+          await loadAnnotations()
+          closeNotification()
+          showSuccess('Success', 'Annotation deleted successfully!')
+        } catch (error) {
+          console.error('Error deleting annotation:', error)
+          closeNotification()
+          showError('Error', 'Failed to delete annotation. Please try again.')
+        }
+      }
+    )
   }
 
   const queryAnnotation = async () => {
@@ -170,7 +189,7 @@ function PDFAnnotator({ documents, notebookId }) {
       setAiResponse(response.data)
     } catch (error) {
       console.error('Error querying annotation:', error)
-      alert('Failed to query AI')
+      showError('Error', 'Failed to query AI. Please try again.')
     } finally {
       setIsLoading(false)
     }
@@ -487,12 +506,30 @@ function PDFAnnotator({ documents, notebookId }) {
                 onClick={queryAnnotation}
                 disabled={isLoading || !query.trim()}
               >
-                {isLoading ? <><FiLoader className="spin" /> Asking...</> : 'Ask AI'}
+                {isLoading ? (
+                  <div className="inline-loading">
+                    <LoadingSpinner size="small" />
+                    <span>Asking...</span>
+                  </div>
+                ) : 'Ask AI'}
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* Notification Modal */}
+      <NotificationModal
+        show={notification.show}
+        type={notification.type}
+        title={notification.title}
+        message={notification.message}
+        onClose={closeNotification}
+        onConfirm={notification.onConfirm}
+        confirmText={notification.confirmText}
+        cancelText={notification.cancelText}
+        okText={notification.okText}
+      />
     </div>
   )
 }

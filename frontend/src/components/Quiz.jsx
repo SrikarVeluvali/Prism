@@ -2,6 +2,10 @@ import { useState } from 'react'
 import { FiCheck, FiX, FiRefreshCw, FiLoader, FiAward } from 'react-icons/fi'
 import axios from 'axios'
 import ReactMarkdown from 'react-markdown';
+import NotificationModal from './NotificationModal'
+import LoadingSpinner from './LoadingSpinner'
+import { useNotification } from '../hooks/useNotification'
+
 const API_URL = 'http://localhost:8000'
 
 function Quiz({ documents, selectedDocIds, notebookId }) {
@@ -13,9 +17,18 @@ function Quiz({ documents, selectedDocIds, notebookId }) {
   const [numQuestions, setNumQuestions] = useState(5)
   const [difficulty, setDifficulty] = useState('medium')
 
+  // Notification modal
+  const {
+    notification,
+    closeNotification,
+    showError,
+    showWarning,
+    showConfirm
+  } = useNotification()
+
   const generateQuiz = async () => {
     if (documents.length === 0) {
-      alert('Please upload documents first')
+      showWarning('No Documents', 'Please upload documents first')
       return
     }
 
@@ -34,7 +47,7 @@ function Quiz({ documents, selectedDocIds, notebookId }) {
       setQuizState('taking')
     } catch (error) {
       console.error('Error generating quiz:', error)
-      alert('Error generating quiz. Please try again.')
+      showError('Error', 'Failed to generate quiz. Please try again.')
       setQuizState('idle')
     }
   }
@@ -48,10 +61,21 @@ function Quiz({ documents, selectedDocIds, notebookId }) {
   const submitQuiz = async () => {
     // Check if all questions are answered
     if (answers.includes(null)) {
-      if (!window.confirm('You have unanswered questions. Submit anyway?')) {
-        return
-      }
+      showConfirm(
+        'Unanswered Questions',
+        'You have unanswered questions. Are you sure you want to submit?',
+        async () => {
+          closeNotification()
+          await processSubmit()
+        },
+        { confirmText: 'Submit Anyway' }
+      )
+      return
     }
+    await processSubmit()
+  }
+
+  const processSubmit = async () => {
 
     setQuizState('loading')
     try {
@@ -69,7 +93,7 @@ function Quiz({ documents, selectedDocIds, notebookId }) {
       setQuizState('results')
     } catch (error) {
       console.error('Error submitting quiz:', error)
-      alert('Error submitting quiz. Please try again.')
+      showError('Error', 'Failed to submit quiz. Please try again.')
       setQuizState('taking')
     }
   }
@@ -90,6 +114,7 @@ function Quiz({ documents, selectedDocIds, notebookId }) {
 
   if (quizState === 'idle') {
     return (
+      <>
       <div className="quiz-container">
         <div className="quiz-setup">
           <div className="quiz-setup-header">
@@ -149,17 +174,41 @@ function Quiz({ documents, selectedDocIds, notebookId }) {
           )}
         </div>
       </div>
+      <NotificationModal
+        show={notification.show}
+        type={notification.type}
+        title={notification.title}
+        message={notification.message}
+        onClose={closeNotification}
+        onConfirm={notification.onConfirm}
+        confirmText={notification.confirmText}
+        cancelText={notification.cancelText}
+        okText={notification.okText}
+      />
+      </>
     )
   }
 
   if (quizState === 'loading') {
     return (
+      <>
       <div className="quiz-container">
         <div className="quiz-loading">
-          <FiLoader className="spinner" size={48} />
-          <p>Generating your quiz...</p>
+          <LoadingSpinner size="large" text="Generating your quiz..." />
         </div>
       </div>
+      <NotificationModal
+        show={notification.show}
+        type={notification.type}
+        title={notification.title}
+        message={notification.message}
+        onClose={closeNotification}
+        onConfirm={notification.onConfirm}
+        confirmText={notification.confirmText}
+        cancelText={notification.cancelText}
+        okText={notification.okText}
+      />
+      </>
     )
   }
 

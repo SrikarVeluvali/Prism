@@ -17,6 +17,9 @@ import {
 } from 'react-icons/fi';
 import { FaRobot } from 'react-icons/fa';
 import axios from 'axios';
+import NotificationModal from './NotificationModal';
+import LoadingSpinner from './LoadingSpinner';
+import { useNotification } from '../hooks/useNotification';
 import RichTextEditor from './RichTextEditor';
 import EnhancedDrawing from './EnhancedDrawing';
 import MindMapViewer from './MindMapViewer';
@@ -77,6 +80,16 @@ function Notes({ documents, selectedDocIds, notebookId }) {
   // AI generation state
   const [genTopic, setGenTopic] = useState('');
   const [genType, setGenType] = useState('summary');
+
+  // Notification modal
+  const {
+    notification,
+    closeNotification,
+    showError,
+    showSuccess,
+    showWarning,
+    showConfirm
+  } = useNotification();
 
   // Search and filter state
   const [searchQuery, setSearchQuery] = useState('');
@@ -164,7 +177,7 @@ function Notes({ documents, selectedDocIds, notebookId }) {
 
   const startNewNote = () => {
     if (!noteTitle.trim()) {
-      alert('Please enter a note title');
+      showWarning('Validation Error', 'Please enter a note title');
       return;
     }
 
@@ -199,7 +212,7 @@ function Notes({ documents, selectedDocIds, notebookId }) {
 
   const saveNote = async () => {
     if (!noteTitle.trim()) {
-      alert('Please enter a note title');
+      showWarning('Validation Error', 'Please enter a note title');
       return;
     }
 
@@ -227,27 +240,34 @@ function Notes({ documents, selectedDocIds, notebookId }) {
       closeEditor();
     } catch (error) {
       console.error('Error saving note:', error);
-      alert('Failed to save note');
+      showError('Error', 'Failed to save note. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
 
   const deleteNote = async (noteId) => {
-    if (!window.confirm('Delete this note?')) return;
-
-    try {
-      await axios.delete(`${API_URL}/notes/${noteId}`);
-      await fetchNotes();
-    } catch (error) {
-      console.error('Error deleting note:', error);
-      alert('Failed to delete note');
-    }
+    showConfirm(
+      'Delete Note',
+      'Are you sure you want to delete this note? This action cannot be undone.',
+      async () => {
+        try {
+          await axios.delete(`${API_URL}/notes/${noteId}`);
+          await fetchNotes();
+          closeNotification();
+          showSuccess('Success', 'Note deleted successfully!');
+        } catch (error) {
+          console.error('Error deleting note:', error);
+          closeNotification();
+          showError('Error', 'Failed to delete note. Please try again.');
+        }
+      }
+    );
   };
 
   const generateAINotes = async () => {
     if (!genType) {
-      alert('Please select a note type');
+      showWarning('Validation Error', 'Please select a note type');
       return;
     }
 
@@ -266,7 +286,8 @@ function Notes({ documents, selectedDocIds, notebookId }) {
       setGenType('summary');
     } catch (error) {
       console.error('Error generating notes:', error);
-      alert('Failed to generate notes: ' + (error.response?.data?.detail || error.message));
+      const errorMessage = error.response?.data?.detail || error.message || 'Unknown error';
+      showError('Error', `Failed to generate notes: ${errorMessage}`);
     } finally {
       setIsLoading(false);
     }
@@ -877,10 +898,24 @@ function Notes({ documents, selectedDocIds, notebookId }) {
 
       {isLoading && (
         <div className="loading-overlay">
-          <div className="loading-spinner"></div>
-          <p>Please wait...</p>
+          <div className="loading-overlay-content">
+            <LoadingSpinner size="large" text="Please wait..." />
+          </div>
         </div>
       )}
+
+      {/* Notification Modal */}
+      <NotificationModal
+        show={notification.show}
+        type={notification.type}
+        title={notification.title}
+        message={notification.message}
+        onClose={closeNotification}
+        onConfirm={notification.onConfirm}
+        confirmText={notification.confirmText}
+        cancelText={notification.cancelText}
+        okText={notification.okText}
+      />
     </div>
   );
 }
