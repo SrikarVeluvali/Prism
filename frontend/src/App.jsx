@@ -18,7 +18,7 @@
  */
 
 import { useState, useRef, useEffect } from 'react'
-import { FiUpload, FiSend, FiTrash2, FiFile, FiMessageSquare, FiAward, FiFileText, FiArrowLeft, FiEdit3, FiEye, FiMic, FiTrendingUp } from 'react-icons/fi'
+import { FiUpload, FiSend, FiTrash2, FiFile, FiMessageSquare, FiAward, FiFileText, FiArrowLeft, FiEdit3, FiEye, FiMic, FiTrendingUp, FiAlertTriangle } from 'react-icons/fi'
 import axios from 'axios'
 import FileUploadModal from './components/FileUploadModal'
 import Quiz from './components/Quiz'
@@ -30,6 +30,7 @@ import Doomscroll from './components/Doomscroll'
 import Library from './components/Library'
 import { NotebookProvider, useNotebook } from './contexts/NotebookContext'
 import './index.css'
+import './library-styles.css'
 import ReactMarkdown from 'react-markdown'
 
 // Backend API base URL
@@ -49,6 +50,12 @@ function AppContent() {
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [showUploadModal, setShowUploadModal] = useState(false)
+  const [deleteConfirmation, setDeleteConfirmation] = useState({
+    show: false,
+    docId: null,
+    docName: '',
+    isDeleting: false
+  })
   const chatEndRef = useRef(null)
   const textareaRef = useRef(null)
 
@@ -118,16 +125,36 @@ function AppContent() {
     setShowUploadModal(false)
   }
 
-  const handleDeleteDocument = async (docId) => {
-    if (!selectedNotebook) return
+  const handleDeleteDocument = (docId, docName) => {
+    setDeleteConfirmation({
+      show: true,
+      docId: docId,
+      docName: docName,
+      isDeleting: false
+    })
+  }
+
+  const confirmDeleteDocument = async () => {
+    if (!selectedNotebook || !deleteConfirmation.docId || deleteConfirmation.isDeleting) return
+
+    // Set deleting state to true
+    setDeleteConfirmation(prev => ({ ...prev, isDeleting: true }))
 
     try {
-      await axios.delete(`${API_URL}/documents/${selectedNotebook.id}/${docId}`)
-      setDocuments(documents.filter(doc => doc.id !== docId))
-      setSelectedDocIds(selectedDocIds.filter(id => id !== docId))
+      await axios.delete(`${API_URL}/documents/${deleteConfirmation.docId}`)
+      setDocuments(documents.filter(doc => doc.id !== deleteConfirmation.docId))
+      setSelectedDocIds(selectedDocIds.filter(id => id !== deleteConfirmation.docId))
+      setDeleteConfirmation({ show: false, docId: null, docName: '', isDeleting: false })
     } catch (error) {
       console.error('Error deleting document:', error)
+      alert('Failed to delete document. Please try again.')
+      setDeleteConfirmation({ show: false, docId: null, docName: '', isDeleting: false })
     }
+  }
+
+  const cancelDeleteDocument = () => {
+    if (deleteConfirmation.isDeleting) return // Prevent canceling during deletion
+    setDeleteConfirmation({ show: false, docId: null, docName: '', isDeleting: false })
   }
 
   const handleClearAll = async () => {
@@ -350,7 +377,7 @@ function AppContent() {
                     className="delete-button"
                     onClick={(e) => {
                       e.stopPropagation()
-                      handleDeleteDocument(doc.id)
+                      handleDeleteDocument(doc.id, doc.filename)
                     }}
                   >
                     <FiTrash2 size={14} />
@@ -525,6 +552,79 @@ function AppContent() {
           onSuccess={handleUploadSuccess}
           notebookId={selectedNotebook.id}
         />
+      )}
+
+      {deleteConfirmation.show && (
+        <div className="modal-overlay notification-overlay" onClick={cancelDeleteDocument}>
+          <div
+            className="notification-modal confirm"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="notification-icon">
+              <FiAlertTriangle size={32} />
+            </div>
+
+            <div className="notification-content">
+              <h3 className="notification-title">Delete Document</h3>
+              <p className="notification-message">
+                Are you sure you want to delete <strong>{deleteConfirmation.docName}</strong>?
+                This will remove the document and all its associated data. This action cannot be undone.
+              </p>
+            </div>
+
+            <div className="notification-actions">
+              <button
+                className="btn-secondary"
+                onClick={cancelDeleteDocument}
+                disabled={deleteConfirmation.isDeleting}
+                style={{
+                  opacity: deleteConfirmation.isDeleting ? 0.5 : 1,
+                  cursor: deleteConfirmation.isDeleting ? 'not-allowed' : 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn-danger"
+                onClick={confirmDeleteDocument}
+                disabled={deleteConfirmation.isDeleting}
+                style={{
+                  position: 'relative',
+                  minWidth: '90px'
+                }}
+              >
+                {deleteConfirmation.isDeleting ? (
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px'
+                  }}>
+                    <div className="loading-dots" style={{ margin: 0 }}>
+                      <div className="loading-dot" style={{
+                        width: '6px',
+                        height: '6px',
+                        backgroundColor: 'white'
+                      }}></div>
+                      <div className="loading-dot" style={{
+                        width: '6px',
+                        height: '6px',
+                        backgroundColor: 'white'
+                      }}></div>
+                      <div className="loading-dot" style={{
+                        width: '6px',
+                        height: '6px',
+                        backgroundColor: 'white'
+                      }}></div>
+                    </div>
+                  </div>
+                ) : (
+                  'Delete'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
