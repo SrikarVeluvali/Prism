@@ -4426,7 +4426,7 @@ body {
   align-items: center;
   gap: 12px;
   padding: 16px;
-  background: white;
+  background: rgb(0, 0, 0);
   border: 2px solid var(--border);
   border-radius: 8px;
   cursor: pointer;
