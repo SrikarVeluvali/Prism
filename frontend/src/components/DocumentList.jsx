@@ -78,7 +78,7 @@ function DocumentList({ documents, onSelectDocument }) {
       <h2 style={{
         fontSize: '18px',
         fontWeight: '600',
-        marginBottom: '20px'
+        marginBottom: '20px',
       }}>
         Documents ({documents.length})
       </h2>
@@ -102,7 +102,9 @@ function DocumentList({ documents, onSelectDocument }) {
               transition: 'all 0.2s',
               display: 'flex',
               flexDirection: 'column',
-              gap: '12px'
+              gap: '12px',
+              color: 'var(--text-primary)',
+              fontWeight: '600',
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.transform = 'translateY(-2px)'

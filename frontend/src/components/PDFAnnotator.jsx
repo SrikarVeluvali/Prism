@@ -24,8 +24,7 @@ const ANNOTATION_COLORS = [
   { name: 'Cyan', value: '#00bcd4' }
 ]
 
-function PDFAnnotator({ documents, notebookId }) {
-  const [selectedDoc, setSelectedDoc] = useState(null)
+function PDFAnnotator({ documents, notebookId, selectedDoc, setSelectedDoc }) {
   const [annotations, setAnnotations] = useState([])
   const [showQueryDialog, setShowQueryDialog] = useState(false)
   const [currentAnnotation, setCurrentAnnotation] = useState(null)
