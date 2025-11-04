@@ -1534,7 +1534,7 @@ Requirements:
 3. Generate {request.num_reorder} reordering questions for sequential/procedural content
 4. Theory questions should test understanding and ask for explanations
 5. Coding questions MUST be in {request.programming_language.upper()} with appropriate syntax and function signatures
-6. Reorder questions should have items shuffled (not in correct order)
+6. Reorder questions should have items shuffled (not in correct order), make sure not to add obvious hints to these reordering questions.)
 7. Difficulty: {request.difficulty}
 
 IMPORTANT: Return ONLY the JSON object, no additional text."""
@@ -1656,7 +1656,7 @@ Return ONLY this JSON format (no other text):
   "missing_points": ["<point 1>", "<point 2>"]
 }}
 
-Be fair but thorough. Award partial credit for partially correct answers.
+Be fair but thorough. Award partial credit for partially correct answers. If the user didn't answer the question at all, provide 0 to the user and return feedback saying that the user didn't attempt the question at all.
 CRITICAL: Return ONLY the JSON object. No explanations before or after."""
 
             eval_completion = groq_client.chat.completions.create(
@@ -2426,7 +2426,7 @@ async def respond_to_interview(request: InterviewRespondRequest):
             "content": f"""{context_prompt}
 Continue the interview by:
 1. Acknowledging the candidate's response briefly
-2. Asking a relevant follow-up question or moving to a new topic
+2. Asking a relevant follow-up question or moving to a new topic if being dragged for too long, or the user doesn't know the answer well
 3. Keep your response concise (2-3 sentences max)
 4. Be professional and encouraging"""
         })
@@ -2511,7 +2511,8 @@ Evaluate based on:
 1. Communication: Clarity, articulation, professionalism
 2. Technical Knowledge: Understanding of concepts, depth of answers
 3. Problem Solving: Analytical thinking, approach to questions
-4. Overall: Holistic performance assessment
+4. Refusal to answer, or no answer of the user will result in 0 marks. Be pretty strict.
+5. Overall: Holistic performance assessment
 
 Be constructive and specific in your feedback."""
 
