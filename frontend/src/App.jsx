@@ -24,7 +24,7 @@ import FileUploadModal from './components/FileUploadModal'
 import Quiz from './components/Quiz'
 import MockTest from './components/MockTest'
 import Notes from './components/Notes'
-import PDFAnnotator from './components/PDFAnnotator'
+import DocumentViewer from './components/DocumentViewer'
 import VirtualInterview from './components/VirtualInterview'
 import Doomscroll from './components/Doomscroll'
 import Library from './components/Library'
@@ -488,7 +488,7 @@ function AppContent() {
         ) : mode === 'notes' ? (
           <Notes documents={documents} selectedDocIds={selectedDocIds} notebookId={selectedNotebook.id} />
         ) : mode === 'pdf' ? (
-          <PDFAnnotator documents={documents} notebookId={selectedNotebook.id} />
+          <DocumentViewer documents={documents} notebookId={selectedNotebook.id} />
         ) : mode === 'assessment' ? (
           assessmentType === 'quiz' ? (
             <Quiz documents={documents} selectedDocIds={selectedDocIds} notebookId={selectedNotebook.id} />
