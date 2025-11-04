@@ -344,7 +344,7 @@ function AppContent() {
             }}
           >
             <FiEye />
-            PDF
+            View
           </button>
           <button
             className={`mode-button ${mode === 'assessment' ? 'active' : ''}`}
@@ -381,12 +381,12 @@ function AppContent() {
         <div className="upload-section">
           <button className="upload-button" onClick={() => setShowUploadModal(true)}>
             <FiUpload />
-            Upload PDFs
+            Upload Sources
           </button>
         </div>
 
         <div className="documents-list">
-          <h3>Documents ({documents.length})</h3>
+          <h3>Sources ({documents.length})</h3>
           {documents.length === 0 ? (
             <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '8px' }}>
               No documents uploaded yet
@@ -399,7 +399,7 @@ function AppContent() {
                 onClick={() => toggleDocumentSelection(doc.id)}
               >
                 <div className="document-name">
-                  <FiFile style={{ display: 'inline', marginRight: '6px' }} />
+                  <FiFile style={{ display: 'inline', marginRight: '6px', color: 'var(--text-secondary)' }} />
                   {doc.filename}
                 </div>
                 <div className="document-info">

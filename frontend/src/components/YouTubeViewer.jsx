@@ -180,7 +180,8 @@ function YouTubeViewer({ documents, notebookId, selectedDoc, onDocChange, metada
             fontSize: '14px',
             display: 'flex',
             alignItems: 'center',
-            gap: '6px'
+            gap: '6px',
+            color: 'var(--text-primary)'
           }}
         >
           ← Back
@@ -201,7 +202,8 @@ function YouTubeViewer({ documents, notebookId, selectedDoc, onDocChange, metada
               fontSize: '14px',
               fontWeight: '500',
               width: '100%',
-              maxWidth: '500px'
+              maxWidth: '500px',
+              color: 'var(--text-primary)'
             }}
           >
             <FiYoutube style={{ fontSize: '18px', color: '#ff0000' }} />
@@ -229,7 +231,8 @@ function YouTubeViewer({ documents, notebookId, selectedDoc, onDocChange, metada
               boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
               maxHeight: '300px',
               overflowY: 'auto',
-              zIndex: 1000
+              zIndex: 1000,
+              
             }}>
               {documents.map(doc => (
                 <button
@@ -249,7 +252,8 @@ function YouTubeViewer({ documents, notebookId, selectedDoc, onDocChange, metada
                     fontSize: '14px',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '8px'
+                    gap: '8px',
+                    color: 'var(--text-primary)'
                   }}
                 >
                   <FiYoutube />
@@ -425,7 +429,7 @@ function YouTubeViewer({ documents, notebookId, selectedDoc, onDocChange, metada
                         key={index}
                         id={`transcript-${entry.start}`}
                         style={{
-                          marginBottom: '16px',
+                          marginBottom: '2px',
                           padding: '12px',
                           borderRadius: '6px',
                           backgroundColor: isActive ? 'var(--primary-alpha)' : 'transparent',
@@ -527,7 +531,8 @@ function YouTubeViewer({ documents, notebookId, selectedDoc, onDocChange, metada
                   backgroundColor: 'var(--bg-secondary)',
                   fontSize: '14px',
                   resize: 'vertical',
-                  outline: 'none'
+                  outline: 'none',
+                  color: 'var(--text-primary)'
                 }}
               />
             </div>
@@ -561,7 +566,7 @@ function YouTubeViewer({ documents, notebookId, selectedDoc, onDocChange, metada
                 onClick={() => setShowAnnotationForm(false)}
                 style={{
                   padding: '10px 20px',
-                  backgroundColor: 'var(--bg-secondary)',
+                  backgroundColor: 'var(--error)',
                   border: 'none',
                   borderRadius: '6px',
                   cursor: 'pointer',

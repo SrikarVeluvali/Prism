@@ -69,6 +69,7 @@ function DocumentViewer({ documents, notebookId }) {
             documents={documents}
             notebookId={notebookId}
             selectedDoc={selectedDoc}
+            setSelectedDoc={setSelectedDoc}
             onDocChange={setSelectedDoc}
           />
         )

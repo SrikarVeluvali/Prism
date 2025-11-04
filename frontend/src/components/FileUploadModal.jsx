@@ -97,11 +97,11 @@ function FileUploadModal({ onClose, onSuccess, notebookId }) {
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h2>Add Documents</h2>
+          <h2>Add Sources</h2>
         </div>
 
         {/* Tab Switcher */}
-        <div style={{ display: 'flex', gap: '8px', padding: '0 20px', borderBottom: '1px solid var(--border)' }}>
+        <div style={{ display: 'flex', gap: '8px', padding: '0 20px', borderBottom: '1px solid var(--border)', marginTop: '10px'}}>
           <button
             onClick={() => setActiveTab('files')}
             style={{
@@ -229,13 +229,14 @@ function FileUploadModal({ onClose, onSuccess, notebookId }) {
                     width: '100%',
                     padding: '12px',
                     borderRadius: '8px',
-                    border: '1px solid var(--border)',
+                    border: '1px solid white',
                     backgroundColor: 'var(--bg-secondary)',
                     fontSize: '14px',
-                    outline: 'none'
+                    outline: 'none',
+                    color: 'var(--text-primary)'
                   }}
                 />
-                <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '8px' }}>
+                <p style={{ fontSize: '12px', color: 'var(--text-primary)', marginTop: '8px' }}>
                   Paste a YouTube video URL. The transcript will be automatically extracted.
                 </p>
               </div>

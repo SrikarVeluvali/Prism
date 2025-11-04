@@ -44,6 +44,9 @@
   --radius-lg: 12px;
   --radius-xl: 16px;
 
+  /* Highlight Transcript */
+  --primary-alpha: #333333;
+
   /* Transitions */
   --transition-fast: 0.15s ease;
   --transition-base: 0.2s ease;
@@ -347,7 +350,7 @@ body {
   font-weight: 600;
   margin-bottom: 6px;
   word-break: break-word;
-  color: var(--text-primary);
+  /* color: white; */
   display: flex;
   align-items: center;
   gap: 8px;
