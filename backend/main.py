@@ -40,6 +40,15 @@ import random
 from bson import ObjectId
 from pathlib import Path
 
+# Import document processors
+from processors import (
+    PDFProcessor,
+    TextProcessor,
+    WordProcessor,
+    LegacyWordProcessor,
+    YouTubeProcessor
+)
+
 # Import database collections and initialization function
 from database import (
     notebooks_collection,
@@ -265,12 +274,21 @@ class NoteGenerateRequest(BaseModel):
 # Annotation Models
 # =================
 class AnnotationCreate(BaseModel):
-    """Model for creating a PDF annotation"""
+    """Model for creating annotations (text highlight or video timestamp)"""
     notebook_id: str
-    document_id: str  # PDF document being annotated
-    page_number: int  # Page number (0-indexed)
-    highlighted_text: str  # Text that was highlighted
-    position: dict  # Position data: {x, y, width, height}
+    document_id: str  # Document being annotated
+    annotation_type: str = "highlight"  # "highlight" for text, "timestamp" for video, "both" for video with text
+
+    # For text/PDF annotations
+    page_number: Optional[int] = None  # Page number (0-indexed, for PDFs)
+    highlighted_text: Optional[str] = None  # Text that was highlighted
+    position: Optional[dict] = None  # Position data: {x, y, width, height}
+
+    # For video timestamp annotations
+    timestamp_start: Optional[float] = None  # Start timestamp in seconds
+    timestamp_end: Optional[float] = None  # End timestamp in seconds (optional)
+
+    # Common fields
     color: str = "#ffeb3b"  # Highlight color
     note: Optional[str] = None  # Optional annotation note
 
@@ -278,6 +296,12 @@ class AnnotationQueryRequest(BaseModel):
     """Model for asking questions about a specific annotation"""
     annotation_id: str
     question: str
+
+
+class YouTubeURLSubmit(BaseModel):
+    """Model for submitting YouTube URLs"""
+    url: str
+    custom_title: Optional[str] = None
 
 
 # ==================== HELPER FUNCTIONS ====================
@@ -346,6 +370,37 @@ def get_embedding(text):
     except Exception as e:
         print(f"Error getting embedding: {e}")
         return None
+
+
+def get_file_processor(filename: str):
+    """
+    Get the appropriate document processor based on file extension
+
+    Args:
+        filename: Name of the file with extension
+
+    Returns:
+        Instance of the appropriate processor class
+
+    Raises:
+        ValueError: If file type is not supported
+    """
+    extension = filename.lower().split('.')[-1]
+
+    if extension == 'pdf':
+        return PDFProcessor()
+    elif extension == 'txt':
+        return TextProcessor('txt')
+    elif extension == 'md':
+        return TextProcessor('md')
+    elif extension == 'rtf':
+        return TextProcessor('rtf')
+    elif extension == 'docx':
+        return WordProcessor()
+    elif extension == 'doc':
+        return LegacyWordProcessor()
+    else:
+        raise ValueError(f"Unsupported file type: {extension}")
 
 
 async def ensure_document_chunks(doc: dict) -> List[str]:
@@ -637,18 +692,243 @@ async def upload_pdfs(notebook_id: str, files: List[UploadFile] = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@app.post("/upload-documents/{notebook_id}")
+async def upload_documents(notebook_id: str, files: List[UploadFile] = File(...)):
+    """Upload and process multiple documents (PDF, TXT, MD, RTF, DOCX, DOC) for a notebook"""
+    try:
+        # Verify notebook exists
+        notebook = await notebooks_collection.find_one({"_id": ObjectId(notebook_id)})
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
+        uploaded_docs = []
+        supported_extensions = ['.pdf', '.txt', '.md', '.rtf', '.docx', '.doc']
+
+        # Create notebook directory if it doesn't exist
+        notebook_dir = UPLOADS_DIR / notebook_id
+        notebook_dir.mkdir(exist_ok=True)
+
+        for file in files:
+            # Check if file type is supported
+            file_ext = os.path.splitext(file.filename)[1].lower()
+            if file_ext not in supported_extensions:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{file.filename} has unsupported file type. Supported: {', '.join(supported_extensions)}"
+                )
+
+            try:
+                # Get appropriate processor
+                processor = get_file_processor(file.filename)
+                file_type = processor.get_file_type()
+
+                # Read file content
+                content = await file.read()
+                file_obj = io.BytesIO(content)
+
+                # Extract text using processor
+                text = processor.extract_text(file_obj)
+
+                # Get metadata
+                file_obj.seek(0)
+                metadata = processor.get_metadata(file_obj)
+
+                # Create chunks
+                chunks = processor.chunk_text(text)
+
+                # Generate document ID
+                doc_id = str(uuid.uuid4())
+
+                # Save file to disk
+                file_path = notebook_dir / f"{doc_id}{file_ext}"
+                with open(file_path, "wb") as f:
+                    f.write(content)
+
+                # Store document metadata in MongoDB
+                doc_data = {
+                    "doc_id": doc_id,
+                    "notebook_id": notebook_id,
+                    "filename": file.filename,
+                    "file_type": file_type,
+                    "uploaded_at": datetime.now().isoformat(),
+                    "chunks_count": len(chunks),
+                    "chunks": chunks,
+                    "file_path": str(file_path),
+                    "metadata": metadata
+                }
+                await documents_collection.insert_one(doc_data)
+
+                # Process and store chunks in Pinecone
+                vectors = []
+                for i, chunk in enumerate(chunks):
+                    embedding = get_embedding(chunk)
+                    if embedding:
+                        vectors.append({
+                            "id": f"{doc_id}_{i}",
+                            "values": embedding,
+                            "metadata": {
+                                "doc_id": doc_id,
+                                "notebook_id": notebook_id,
+                                "filename": file.filename,
+                                "file_type": file_type,
+                                "chunk_index": i,
+                                "text": chunk
+                            }
+                        })
+
+                # Upsert to Pinecone in batches
+                batch_size = 100
+                for i in range(0, len(vectors), batch_size):
+                    batch = vectors[i:i + batch_size]
+                    index.upsert(vectors=batch)
+
+                uploaded_docs.append({
+                    "id": doc_id,
+                    "filename": file.filename,
+                    "file_type": file_type,
+                    "uploaded_at": doc_data["uploaded_at"],
+                    "chunks_count": len(chunks)
+                })
+
+            except ValueError as ve:
+                raise HTTPException(status_code=400, detail=str(ve))
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Error processing {file.filename}: {str(e)}")
+
+        # Update notebook document count
+        await notebooks_collection.update_one(
+            {"_id": ObjectId(notebook_id)},
+            {"$inc": {"document_count": len(files)}}
+        )
+
+        return {
+            "message": f"Successfully uploaded {len(files)} document(s)",
+            "documents": uploaded_docs
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/add-youtube/{notebook_id}")
+async def add_youtube_video(notebook_id: str, video_data: YouTubeURLSubmit):
+    """Add a YouTube video to a notebook by URL"""
+    try:
+        # Verify notebook exists
+        notebook = await notebooks_collection.find_one({"_id": ObjectId(notebook_id)})
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
+        # Initialize YouTube processor
+        processor = YouTubeProcessor()
+
+        try:
+            # Extract transcript and metadata
+            text = processor.extract_text(video_data.url)
+            metadata = processor.get_metadata(video_data.url)
+            transcript_data = processor.get_transcript_with_timestamps()
+
+            # Create chunks
+            chunks = processor.chunk_text(text)
+
+            # Generate document ID
+            doc_id = str(uuid.uuid4())
+
+            # Use custom title if provided, otherwise use video title from metadata
+            filename = video_data.custom_title or metadata.get("title", "YouTube Video")
+
+            # Store document metadata in MongoDB
+            doc_data = {
+                "doc_id": doc_id,
+                "notebook_id": notebook_id,
+                "filename": filename,
+                "file_type": "youtube",
+                "source_url": video_data.url,
+                "video_id": metadata.get("video_id", ""),
+                "duration": metadata.get("duration", 0),
+                "transcript": transcript_data,  # Store full transcript with timestamps
+                "uploaded_at": datetime.now().isoformat(),
+                "chunks_count": len(chunks),
+                "chunks": chunks,
+                "metadata": metadata
+            }
+            await documents_collection.insert_one(doc_data)
+
+            # Process and store chunks in Pinecone
+            vectors = []
+            for i, chunk in enumerate(chunks):
+                embedding = get_embedding(chunk)
+                if embedding:
+                    vectors.append({
+                        "id": f"{doc_id}_{i}",
+                        "values": embedding,
+                        "metadata": {
+                            "doc_id": doc_id,
+                            "notebook_id": notebook_id,
+                            "filename": filename,
+                            "file_type": "youtube",
+                            "chunk_index": i,
+                            "text": chunk
+                        }
+                    })
+
+            # Upsert to Pinecone in batches
+            batch_size = 100
+            for i in range(0, len(vectors), batch_size):
+                batch = vectors[i:i + batch_size]
+                index.upsert(vectors=batch)
+
+            # Update notebook document count
+            await notebooks_collection.update_one(
+                {"_id": ObjectId(notebook_id)},
+                {"$inc": {"document_count": 1}}
+            )
+
+            return {
+                "message": "Successfully added YouTube video",
+                "document": {
+                    "id": doc_id,
+                    "filename": filename,
+                    "file_type": "youtube",
+                    "source_url": video_data.url,
+                    "duration": metadata.get("duration", 0),
+                    "uploaded_at": doc_data["uploaded_at"],
+                    "chunks_count": len(chunks)
+                }
+            }
+
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Error processing YouTube video: {str(e)}")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/documents/{notebook_id}")
 async def get_documents(notebook_id: str):
     """Get list of uploaded documents for a notebook"""
     try:
         documents = []
         async for doc in documents_collection.find({"notebook_id": notebook_id}).sort("uploaded_at", -1):
-            documents.append({
+            doc_info = {
                 "id": doc["doc_id"],
                 "filename": doc["filename"],
                 "uploaded_at": doc["uploaded_at"],
-                "chunks_count": doc["chunks_count"]
-            })
+                "chunks_count": doc["chunks_count"],
+                "file_type": doc.get("file_type", "pdf")  # Default to pdf for old documents
+            }
+
+            # Add YouTube-specific fields if applicable
+            if doc.get("file_type") == "youtube":
+                doc_info["source_url"] = doc.get("source_url", "")
+                doc_info["duration"] = doc.get("duration", 0)
+
+            documents.append(doc_info)
         return {"documents": documents}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -690,6 +970,118 @@ async def get_pdf(notebook_id: str, doc_id: str):
     except Exception as e:
         print(f"Error serving PDF: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/documents/{notebook_id}/{doc_id}/content")
+async def get_document_content(notebook_id: str, doc_id: str):
+    """Get document content (for text-based files) or metadata (for videos)"""
+    try:
+        # Find the document
+        doc = await documents_collection.find_one({"doc_id": doc_id, "notebook_id": notebook_id})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        file_type = doc.get("file_type", "pdf")
+
+        if file_type == "youtube":
+            # For YouTube, return video metadata and transcript
+            return {
+                "file_type": "youtube",
+                "source_url": doc.get("source_url", ""),
+                "video_id": doc.get("video_id", ""),
+                "duration": doc.get("duration", 0),
+                "transcript": doc.get("transcript", []),
+                "filename": doc.get("filename", ""),
+                "metadata": doc.get("metadata", {})
+            }
+        elif file_type in ["txt", "md", "rtf", "docx", "doc"]:
+            # For text-based documents, serve the file
+            if "file_path" in doc:
+                file_path = Path(doc["file_path"])
+            else:
+                # Try to find the file
+                notebook_dir = UPLOADS_DIR / notebook_id
+                possible_extensions = ['.txt', '.md', '.rtf', '.docx', '.doc']
+                file_path = None
+                for ext in possible_extensions:
+                    test_path = notebook_dir / f"{doc_id}{ext}"
+                    if test_path.exists():
+                        file_path = test_path
+                        break
+
+            if not file_path or not file_path.exists():
+                raise HTTPException(status_code=404, detail="Document file not found")
+
+            # Determine media type
+            media_types = {
+                '.txt': 'text/plain',
+                '.md': 'text/markdown',
+                '.rtf': 'application/rtf',
+                '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                '.doc': 'application/msword'
+            }
+            file_ext = file_path.suffix.lower()
+            media_type = media_types.get(file_ext, 'application/octet-stream')
+
+            return FileResponse(
+                path=str(file_path.absolute()),
+                media_type=media_type,
+                filename=doc["filename"],
+                headers={
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "GET",
+                    "Access-Control-Allow-Headers": "*",
+                }
+            )
+        elif file_type == "pdf":
+            # For PDFs, redirect to PDF endpoint
+            raise HTTPException(status_code=400, detail="Use /pdf endpoint for PDF files")
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported file type: {file_type}")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/documents/{notebook_id}/{doc_id}/metadata")
+async def get_document_metadata(notebook_id: str, doc_id: str):
+    """Get detailed document metadata"""
+    try:
+        # Find the document
+        doc = await documents_collection.find_one({"doc_id": doc_id, "notebook_id": notebook_id})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        # Build response
+        response = {
+            "doc_id": doc_id,
+            "notebook_id": notebook_id,
+            "filename": doc.get("filename", ""),
+            "file_type": doc.get("file_type", "pdf"),
+            "uploaded_at": doc.get("uploaded_at", ""),
+            "chunks_count": doc.get("chunks_count", 0)
+        }
+
+        # Add type-specific fields
+        if doc.get("file_type") == "youtube":
+            response["source_url"] = doc.get("source_url", "")
+            response["video_id"] = doc.get("video_id", "")
+            response["duration"] = doc.get("duration", 0)
+            response["has_transcript"] = len(doc.get("transcript", [])) > 0
+
+        if "file_path" in doc:
+            response["file_path"] = doc["file_path"]
+
+        if "metadata" in doc:
+            response["metadata"] = doc["metadata"]
+
+        return response
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.delete("/documents/{doc_id}")
 async def delete_document(doc_id: str):
@@ -1787,32 +2179,52 @@ async def get_annotations(notebook_id: str, document_id: Optional[str] = None):
 
 @app.post("/annotations")
 async def create_annotation(annotation: AnnotationCreate):
-    """Create a new annotation"""
+    """Create a new annotation (text highlight or video timestamp)"""
     try:
         ann_data = {
             "notebook_id": annotation.notebook_id,
             "document_id": annotation.document_id,
-            "page_number": annotation.page_number,
-            "highlighted_text": annotation.highlighted_text,
-            "position": annotation.position,
+            "annotation_type": annotation.annotation_type,
             "color": annotation.color,
             "note": annotation.note,
             "created_at": datetime.now().isoformat()
         }
+
+        # Add fields based on annotation type
+        if annotation.annotation_type in ["highlight", "both"]:
+            ann_data["page_number"] = annotation.page_number
+            ann_data["highlighted_text"] = annotation.highlighted_text
+            ann_data["position"] = annotation.position
+
+        if annotation.annotation_type in ["timestamp", "both"]:
+            ann_data["timestamp_start"] = annotation.timestamp_start
+            ann_data["timestamp_end"] = annotation.timestamp_end
+
         result = await annotations_collection.insert_one(ann_data)
 
         # Return serializable response
-        return {
+        response_data = {
             "id": str(result.inserted_id),
             "notebook_id": annotation.notebook_id,
             "document_id": annotation.document_id,
-            "page_number": annotation.page_number,
-            "highlighted_text": annotation.highlighted_text,
-            "position": annotation.position,
+            "annotation_type": annotation.annotation_type,
             "color": annotation.color,
             "note": annotation.note,
             "created_at": ann_data["created_at"]
         }
+
+        # Include relevant fields based on annotation type
+        if annotation.annotation_type in ["highlight", "both"]:
+            response_data["page_number"] = annotation.page_number
+            response_data["highlighted_text"] = annotation.highlighted_text
+            response_data["position"] = annotation.position
+
+        if annotation.annotation_type in ["timestamp", "both"]:
+            response_data["timestamp_start"] = annotation.timestamp_start
+            response_data["timestamp_end"] = annotation.timestamp_end
+
+        return response_data
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
