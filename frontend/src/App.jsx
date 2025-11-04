@@ -52,9 +52,14 @@ function AppContent() {
   const [showUploadModal, setShowUploadModal] = useState(false)
   const [deleteConfirmation, setDeleteConfirmation] = useState({
     show: false,
+    type: null, // 'single' or 'clearAll'
     docId: null,
     docName: '',
     isDeleting: false
+  })
+  const [errorModal, setErrorModal] = useState({
+    show: false,
+    message: ''
   })
   const chatEndRef = useRef(null)
   const textareaRef = useRef(null)
@@ -128,6 +133,7 @@ function AppContent() {
   const handleDeleteDocument = (docId, docName) => {
     setDeleteConfirmation({
       show: true,
+      type: 'single',
       docId: docId,
       docName: docName,
       isDeleting: false
@@ -135,43 +141,68 @@ function AppContent() {
   }
 
   const confirmDeleteDocument = async () => {
-    if (!selectedNotebook || !deleteConfirmation.docId || deleteConfirmation.isDeleting) return
+    if (deleteConfirmation.isDeleting) return
 
     // Set deleting state to true
     setDeleteConfirmation(prev => ({ ...prev, isDeleting: true }))
 
     try {
-      await axios.delete(`${API_URL}/documents/${deleteConfirmation.docId}`)
-      setDocuments(documents.filter(doc => doc.id !== deleteConfirmation.docId))
-      setSelectedDocIds(selectedDocIds.filter(id => id !== deleteConfirmation.docId))
-      setDeleteConfirmation({ show: false, docId: null, docName: '', isDeleting: false })
+      if (deleteConfirmation.type === 'single') {
+        await axios.delete(`${API_URL}/documents/${deleteConfirmation.docId}`)
+        setDocuments(documents.filter(doc => doc.id !== deleteConfirmation.docId))
+        setSelectedDocIds(selectedDocIds.filter(id => id !== deleteConfirmation.docId))
+        setDeleteConfirmation({ show: false, type: null, docId: null, docName: '', isDeleting: false })
+      } else if (deleteConfirmation.type === 'clearAll') {
+        // Delete all documents one by one
+        const deletePromises = documents.map(doc => 
+          axios.delete(`${API_URL}/documents/${doc.id}`)
+        )
+        await Promise.all(deletePromises)
+        
+        // Clear chat history
+        await axios.delete(`${API_URL}/chat-history/${selectedNotebook.id}`)
+        
+        setDocuments([])
+        setSelectedDocIds([])
+        setMessages([])
+        setDeleteConfirmation({ show: false, type: null, docId: null, docName: '', isDeleting: false })
+      }
     } catch (error) {
-      console.error('Error deleting document:', error)
-      alert('Failed to delete document. Please try again.')
-      setDeleteConfirmation({ show: false, docId: null, docName: '', isDeleting: false })
+      console.error('Error deleting:', error)
+      setDeleteConfirmation({ show: false, type: null, docId: null, docName: '', isDeleting: false })
+      
+      // If clearing all, refresh documents to see what was actually deleted
+      if (deleteConfirmation.type === 'clearAll') {
+        await fetchDocuments()
+      }
+      
+      // Show error modal
+      const errorMessage = deleteConfirmation.type === 'clearAll' 
+        ? 'Failed to delete all documents. Some documents may have been deleted. Please check the list below.'
+        : `Failed to delete document. ${error.response?.data?.detail || 'Please try again.'}`
+      
+      setErrorModal({
+        show: true,
+        message: errorMessage
+      })
     }
   }
 
   const cancelDeleteDocument = () => {
     if (deleteConfirmation.isDeleting) return // Prevent canceling during deletion
-    setDeleteConfirmation({ show: false, docId: null, docName: '', isDeleting: false })
+    setDeleteConfirmation({ show: false, type: null, docId: null, docName: '', isDeleting: false })
   }
 
-  const handleClearAll = async () => {
+  const handleClearAll = () => {
     if (!selectedNotebook) return
 
-    if (!window.confirm('Are you sure you want to delete all documents in this notebook?')) {
-      return
-    }
-
-    try {
-      await axios.delete(`${API_URL}/documents/${selectedNotebook.id}`)
-      setDocuments([])
-      setSelectedDocIds([])
-      setMessages([])
-    } catch (error) {
-      console.error('Error clearing documents:', error)
-    }
+    setDeleteConfirmation({
+      show: true,
+      type: 'clearAll',
+      docId: null,
+      docName: '',
+      isDeleting: false
+    })
   }
 
   const toggleDocumentSelection = (docId) => {
@@ -565,10 +596,21 @@ function AppContent() {
             </div>
 
             <div className="notification-content">
-              <h3 className="notification-title">Delete Document</h3>
+              <h3 className="notification-title">
+                {deleteConfirmation.type === 'clearAll' ? 'Clear All Documents' : 'Delete Document'}
+              </h3>
               <p className="notification-message">
-                Are you sure you want to delete <strong>{deleteConfirmation.docName}</strong>?
-                This will remove the document and all its associated data. This action cannot be undone.
+                {deleteConfirmation.type === 'clearAll' ? (
+                  <>
+                    Are you sure you want to delete <strong>all {documents.length} document{documents.length !== 1 ? 's' : ''}</strong> in this notebook?
+                    This will remove all documents and their associated data, including chat history. This action cannot be undone.
+                  </>
+                ) : (
+                  <>
+                    Are you sure you want to delete <strong>{deleteConfirmation.docName}</strong>?
+                    This will remove the document and all its associated data. This action cannot be undone.
+                  </>
+                )}
               </p>
             </div>
 
@@ -621,6 +663,36 @@ function AppContent() {
                 ) : (
                   'Delete'
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Error Modal */}
+      {errorModal.show && (
+        <div className="modal-overlay notification-overlay" onClick={() => setErrorModal({ show: false, message: '' })}>
+          <div
+            className="notification-modal error"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="notification-icon">
+              <FiAlertTriangle size={32} />
+            </div>
+
+            <div className="notification-content">
+              <h3 className="notification-title">Error</h3>
+              <p className="notification-message">
+                {errorModal.message}
+              </p>
+            </div>
+
+            <div className="notification-actions">
+              <button
+                className="btn-primary"
+                onClick={() => setErrorModal({ show: false, message: '' })}
+              >
+                OK
               </button>
             </div>
           </div>
