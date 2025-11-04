@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { FiBookmark, FiFolder, FiX, FiPlus, FiTrash2, FiRefreshCw, FiLoader, FiChevronUp, FiChevronDown } from 'react-icons/fi'
+import { FiBookmark, FiFolder, FiX, FiPlus, FiTrash2, FiRefreshCw, FiLoader, FiChevronUp, FiChevronDown, FiAlertTriangle } from 'react-icons/fi'
 import axios from 'axios'
 
 const API_URL = 'http://localhost:8000'
@@ -31,6 +31,13 @@ function Doomscroll({ documents, notebookId }) {
   const [cardToOrganize, setCardToOrganize] = useState(null)
   const [hasMore, setHasMore] = useState(true)
   const [statusMessage, setStatusMessage] = useState('')
+  const [deleteConfirmation, setDeleteConfirmation] = useState({
+    show: false,
+    type: null, // 'card' or 'folder'
+    itemId: null,
+    itemName: '',
+    isDeleting: false
+  })
 
   const containerRef = useRef(null)
   const isGeneratingRef = useRef(false)
@@ -201,16 +208,56 @@ function Doomscroll({ documents, notebookId }) {
     }
   }
 
-  const deleteFolder = async (folderId) => {
-    if (!window.confirm('Delete this folder? Cards will be moved to uncategorized.')) return
+  const handleDeleteFolder = (folderId, folderName) => {
+    setDeleteConfirmation({
+      show: true,
+      type: 'folder',
+      itemId: folderId,
+      itemName: folderName,
+      isDeleting: false
+    })
+  }
+
+  const handleDeleteCard = (cardId, cardTitle) => {
+    setDeleteConfirmation({
+      show: true,
+      type: 'card',
+      itemId: cardId,
+      itemName: cardTitle,
+      isDeleting: false
+    })
+  }
+
+  const confirmDelete = async () => {
+    if (!deleteConfirmation.itemId || deleteConfirmation.isDeleting) return
+
+    setDeleteConfirmation(prev => ({ ...prev, isDeleting: true }))
 
     try {
-      await axios.delete(`${API_URL}/doomscroll/folders/${folderId}`)
-      await fetchFolders()
-      await fetchSavedCards()
+      if (deleteConfirmation.type === 'card') {
+        await axios.delete(`${API_URL}/doomscroll/saved/${notebookId}/${deleteConfirmation.itemId}`)
+        setLikedCards(prev => {
+          const newSet = new Set(prev)
+          newSet.delete(deleteConfirmation.itemId)
+          return newSet
+        })
+        await fetchSavedCards()
+      } else if (deleteConfirmation.type === 'folder') {
+        await axios.delete(`${API_URL}/doomscroll/folders/${deleteConfirmation.itemId}`)
+        await fetchFolders()
+        await fetchSavedCards()
+      }
+      setDeleteConfirmation({ show: false, type: null, itemId: null, itemName: '', isDeleting: false })
     } catch (error) {
-      console.error('Error deleting folder:', error)
+      console.error('Error deleting:', error)
+      alert('Failed to delete. Please try again.')
+      setDeleteConfirmation({ show: false, type: null, itemId: null, itemName: '', isDeleting: false })
     }
+  }
+
+  const cancelDelete = () => {
+    if (deleteConfirmation.isDeleting) return
+    setDeleteConfirmation({ show: false, type: null, itemId: null, itemName: '', isDeleting: false })
   }
 
   const moveCardToFolder = async (cardId, folderId) => {
@@ -450,7 +497,7 @@ function Doomscroll({ documents, notebookId }) {
                       </button>
                       <button
                         className="folder-delete"
-                        onClick={() => deleteFolder(folder.id)}
+                        onClick={() => handleDeleteFolder(folder.id, folder.name)}
                       >
                         <FiTrash2 size={14} />
                       </button>
@@ -483,7 +530,7 @@ function Doomscroll({ documents, notebookId }) {
                         </button>
                         <button
                           className="delete-btn"
-                          onClick={() => toggleLike({ id: card.card_id })}
+                          onClick={() => handleDeleteCard(card.card_id, card.title)}
                         >
                           <FiTrash2 size={14} />
                         </button>
@@ -567,6 +614,91 @@ function Doomscroll({ documents, notebookId }) {
                   </button>
                 ))}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirmation.show && (
+        <div className="modal-overlay notification-overlay" onClick={cancelDelete}>
+          <div
+            className="notification-modal confirm"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="notification-icon">
+              <FiAlertTriangle size={32} />
+            </div>
+
+            <div className="notification-content">
+              <h3 className="notification-title">
+                {deleteConfirmation.type === 'folder' ? 'Delete Folder' : 'Delete Saved Card'}
+              </h3>
+              <p className="notification-message">
+                {deleteConfirmation.type === 'folder' ? (
+                  <>
+                    Are you sure you want to delete the folder <strong>{deleteConfirmation.itemName}</strong>?
+                    All cards in this folder will be moved to uncategorized. This action cannot be undone.
+                  </>
+                ) : (
+                  <>
+                    Are you sure you want to delete <strong>{deleteConfirmation.itemName}</strong>?
+                    This action cannot be undone.
+                  </>
+                )}
+              </p>
+            </div>
+
+            <div className="notification-actions">
+              <button
+                className="btn-secondary"
+                onClick={cancelDelete}
+                disabled={deleteConfirmation.isDeleting}
+                style={{
+                  opacity: deleteConfirmation.isDeleting ? 0.5 : 1,
+                  cursor: deleteConfirmation.isDeleting ? 'not-allowed' : 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn-danger"
+                onClick={confirmDelete}
+                disabled={deleteConfirmation.isDeleting}
+                style={{
+                  position: 'relative',
+                  minWidth: '90px'
+                }}
+              >
+                {deleteConfirmation.isDeleting ? (
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px'
+                  }}>
+                    <div className="loading-dots" style={{ margin: 0 }}>
+                      <div className="loading-dot" style={{
+                        width: '6px',
+                        height: '6px',
+                        backgroundColor: 'white'
+                      }}></div>
+                      <div className="loading-dot" style={{
+                        width: '6px',
+                        height: '6px',
+                        backgroundColor: 'white'
+                      }}></div>
+                      <div className="loading-dot" style={{
+                        width: '6px',
+                        height: '6px',
+                        backgroundColor: 'white'
+                      }}></div>
+                    </div>
+                  </div>
+                ) : (
+                  'Delete'
+                )}
+              </button>
             </div>
           </div>
         </div>
