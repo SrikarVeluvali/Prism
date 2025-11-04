@@ -5,8 +5,6 @@ import {
   FiTrash2,
   FiX,
   FiStar,
-  FiGrid,
-  FiList,
   FiEye,
   FiSearch,
   FiFilter,
@@ -57,7 +55,6 @@ const AI_NOTE_TYPES = [
 function Notes({ documents, selectedDocIds, notebookId }) {
   // Core state
   const [notes, setNotes] = useState([]);
-  const [viewMode, setViewMode] = useState('grid');
   const [isLoading, setIsLoading] = useState(false);
 
   // Editor state - full screen mode
@@ -470,7 +467,7 @@ function Notes({ documents, selectedDocIds, notebookId }) {
                     onClick={() => setNoteType('rich_text')}
                     className={noteType === 'rich_text' ? 'type-btn active' : 'type-btn'}
                   >
-                    Rich Text
+                    Text
                   </button>
                   <button
                     onClick={() => setNoteType('drawing')}
@@ -579,23 +576,6 @@ function Notes({ documents, selectedDocIds, notebookId }) {
             <FiFilter />
           </button>
 
-          <div className="view-toggle">
-            <button
-              onClick={() => setViewMode('grid')}
-              className={viewMode === 'grid' ? 'active' : ''}
-              title="Grid View"
-            >
-              <FiGrid />
-            </button>
-            <button
-              onClick={() => setViewMode('list')}
-              className={viewMode === 'list' ? 'active' : ''}
-              title="List View"
-            >
-              <FiList />
-            </button>
-          </div>
-
           <button onClick={openNamePrompt} className="action-button primary">
             <FiPlus /> New Note
           </button>
@@ -658,7 +638,7 @@ function Notes({ documents, selectedDocIds, notebookId }) {
         </div>
       )}
 
-      <div className={`notes-${viewMode}`}>
+      <div className="notes-grid">
         {filteredNotes.length === 0 ? (
           <div className="notes-empty">
             <p>No notes yet. Create your first note or generate AI notes from your documents!</p>
@@ -752,7 +732,7 @@ function Notes({ documents, selectedDocIds, notebookId }) {
                   onClick={() => setNoteType('rich_text')}
                   className={noteType === 'rich_text' ? 'type-btn-inline active' : 'type-btn-inline'}
                 >
-                  Rich Text
+                  Text
                 </button>
                 <button
                   onClick={() => setNoteType('drawing')}

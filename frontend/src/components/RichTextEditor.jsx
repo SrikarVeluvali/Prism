@@ -302,7 +302,6 @@ const RichTextEditor = ({ content, onChange }) => {
       TableHeader,
       TableCell,
     ],
-    content: content || '<p>Start typing your note...</p>',
     onUpdate: ({ editor }) => {
       const html = editor.getHTML();
       if (onChange) {
