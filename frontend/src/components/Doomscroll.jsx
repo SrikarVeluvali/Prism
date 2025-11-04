@@ -529,7 +529,7 @@ function Doomscroll({ documents, notebookId }) {
               <button className="cancel-button" onClick={() => setShowFolderModal(false)}>
                 Cancel
               </button>
-              <button className="confirm-button" onClick={createFolder}>
+              <button className="confirm-button" onClick={() => { createFolder(); setShowFolderModal(false); }}>
                 Create
               </button>
             </div>
