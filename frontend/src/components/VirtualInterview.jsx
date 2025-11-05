@@ -4,7 +4,7 @@ import axios from 'axios'
 
 const API_URL = 'http://localhost:8000'
 
-function VirtualInterview({ notebookId }) {
+function VirtualInterview({ documents, selectedDocIds, notebookId }) {
   const [interviewState, setInterviewState] = useState('setup') // setup, active, completed
   const [sessionId, setSessionId] = useState(null)
   const [messages, setMessages] = useState([])
@@ -94,6 +94,7 @@ function VirtualInterview({ notebookId }) {
     try {
       const response = await axios.post(`${API_URL}/interview/start`, {
         notebook_id: notebookId,
+        document_ids: selectedDocIds.length > 0 ? selectedDocIds : null,
         interview_type: interviewType,
         difficulty: difficulty,
         duration: duration

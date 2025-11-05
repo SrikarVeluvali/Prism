@@ -40,10 +40,36 @@ const MenuBar = ({ editor }) => {
   }
 
   const addImage = () => {
-    const url = window.prompt('Enter image URL:');
-    if (url) {
-      editor.chain().focus().setImage({ src: url }).run();
-    }
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+
+    input.onchange = async (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        try {
+          const formData = new FormData();
+          formData.append('file', file);
+
+          const response = await fetch('http://localhost:8000/upload-image', {
+            method: 'POST',
+            body: formData,
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            editor.chain().focus().setImage({ src: data.url }).run();
+          } else {
+            alert('Failed to upload image');
+          }
+        } catch (error) {
+          console.error('Error uploading image:', error);
+          alert('Error uploading image');
+        }
+      }
+    };
+
+    input.click();
   };
 
   const addLink = () => {

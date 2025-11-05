@@ -23,6 +23,7 @@ Project: PRISM
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import List, Optional
 import os
@@ -80,6 +81,10 @@ app = FastAPI(
 UPLOADS_DIR = Path("uploads")
 UPLOADS_DIR.mkdir(exist_ok=True)
 
+# Directory where uploaded images are stored
+IMAGES_DIR = Path("uploads/images")
+IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+
 # Application Startup Event
 # =========================
 @app.on_event("startup")
@@ -102,6 +107,9 @@ app.add_middleware(
     allow_methods=["*"],  # Allow all HTTP methods (GET, POST, PUT, DELETE, etc.)
     allow_headers=["*"],  # Allow all headers
 )
+
+# Mount static files for image serving
+app.mount("/uploads/images", StaticFiles(directory=str(IMAGES_DIR)), name="images")
 
 # AI Services Initialization
 # ===========================
@@ -907,6 +915,45 @@ async def add_youtube_video(notebook_id: str, video_data: YouTubeURLSubmit):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/upload-image")
+async def upload_image(file: UploadFile = File(...)):
+    """Upload an image for use in rich text notes"""
+    try:
+        # Validate file type
+        allowed_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg']
+        file_ext = os.path.splitext(file.filename)[1].lower()
+
+        if file_ext not in allowed_extensions:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid file type. Allowed: {', '.join(allowed_extensions)}"
+            )
+
+        # Generate unique filename
+        image_id = str(uuid.uuid4())
+        filename = f"{image_id}{file_ext}"
+        file_path = IMAGES_DIR / filename
+
+        # Save file
+        content = await file.read()
+        with open(file_path, "wb") as f:
+            f.write(content)
+
+        # Return URL for the uploaded image
+        image_url = f"http://localhost:8000/uploads/images/{filename}"
+
+        return {
+            "success": True,
+            "url": image_url,
+            "filename": filename
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error uploading image: {str(e)}")
 
 
 @app.get("/documents/{notebook_id}")
@@ -2303,6 +2350,7 @@ def clear_all():
 
 class InterviewStartRequest(BaseModel):
     notebook_id: str
+    document_ids: Optional[List[str]] = None  # specific document IDs to focus on
     interview_type: str  # technical, behavioral, mixed
     difficulty: str  # easy, medium, hard
     duration: int  # in minutes
@@ -2321,9 +2369,38 @@ async def start_interview(request: InterviewStartRequest):
         session_id = str(uuid.uuid4())
 
         # Get relevant content from documents in the notebook
+        print(f"[Interview Start] Notebook ID: {request.notebook_id}, Document IDs: {request.document_ids}")
+
         documents = []
-        async for doc in documents_collection.find({"notebook_id": request.notebook_id}):
-            documents.append(doc)
+        if request.document_ids:
+            # Fetch only selected documents
+            async for doc in documents_collection.find({
+                "notebook_id": request.notebook_id,
+                "doc_id": {"$in": request.document_ids}
+            }):
+                documents.append(doc)
+            print(f"[Interview Start] Found {len(documents)} selected documents")
+        else:
+            # Fetch all documents in the notebook
+            async for doc in documents_collection.find({"notebook_id": request.notebook_id}):
+                documents.append(doc)
+            print(f"[Interview Start] Found {len(documents)} total documents in notebook")
+
+        # Build context from document content
+        document_context = ""
+        if documents:
+            doc_summaries = []
+            for doc in documents[:5]:  # Limit to first 5 documents
+                filename = doc.get("filename", "Unknown")
+                # Get first few chunks for context
+                chunks = doc.get("chunks", [])[:3]
+                content_preview = " ".join(chunks[:2]) if chunks else ""
+                if content_preview:
+                    doc_summaries.append(f"- {filename}: {content_preview[:200]}...")
+
+            if doc_summaries:
+                document_context = f"\n\nThe candidate has been studying the following materials:\n" + "\n".join(doc_summaries) + "\n\nUse this context to ask relevant interview questions related to these topics."
+                print(f"[Interview Start] Document context built with {len(doc_summaries)} document summaries")
 
         # Generate initial greeting and first question based on interview type
         if request.interview_type == "technical":
@@ -2341,6 +2418,7 @@ async def start_interview(request: InterviewStartRequest):
 
         system_prompt = f"""You are an AI interviewer for a job interview simulation. {context_prompt}
 {difficulty_desc.get(request.difficulty, '')}
+{document_context}
 
 Guidelines:
 1. Be professional and friendly
@@ -2350,6 +2428,7 @@ Guidelines:
 5. Start with an introduction and ask the first question
 6. Keep questions concise and clear
 7. Adapt your questions based on the candidate's responses
+8. Base your questions on the topics covered in the candidate's study materials when relevant
 
 Start the interview with a friendly introduction and ask your first question."""
 
@@ -2370,6 +2449,7 @@ Start the interview with a friendly introduction and ask your first question."""
         session_data = {
             "session_id": session_id,
             "notebook_id": request.notebook_id,
+            "document_ids": request.document_ids,
             "interview_type": request.interview_type,
             "difficulty": request.difficulty,
             "duration": request.duration,
@@ -2410,6 +2490,35 @@ async def respond_to_interview(request: InterviewRespondRequest):
             "timestamp": datetime.utcnow()
         })
 
+        # Get document context if available
+        document_context = ""
+        document_ids = session.get("document_ids")
+
+        print(f"[Interview] Session document_ids: {document_ids}")
+
+        if document_ids:
+            documents = []
+            async for doc in documents_collection.find({
+                "notebook_id": session["notebook_id"],
+                "doc_id": {"$in": document_ids}
+            }):
+                documents.append(doc)
+
+            print(f"[Interview] Found {len(documents)} documents for context")
+
+            if documents:
+                doc_summaries = []
+                for doc in documents[:5]:
+                    filename = doc.get("filename", "Unknown")
+                    chunks = doc.get("chunks", [])[:3]
+                    content_preview = " ".join(chunks[:2]) if chunks else ""
+                    if content_preview:
+                        doc_summaries.append(f"- {filename}: {content_preview[:200]}...")
+
+                if doc_summaries:
+                    document_context = f"\n\nThe candidate has been studying these materials:\n" + "\n".join(doc_summaries) + "\n\nBase your questions on these topics."
+                    print(f"[Interview] Document context built with {len(doc_summaries)} document summaries")
+
         # Build conversation history for context
         conversation_messages = []
 
@@ -2424,11 +2533,14 @@ async def respond_to_interview(request: InterviewRespondRequest):
         conversation_messages.append({
             "role": "system",
             "content": f"""{context_prompt}
+{document_context}
+
 Continue the interview by:
 1. Acknowledging the candidate's response briefly
-2. Asking a relevant follow-up question or moving to a new topic if being dragged for too long, or the user doesn't know the answer well
+2. Asking a relevant follow-up question based on their study materials, or moving to a new topic if needed
 3. Keep your response concise (2-3 sentences max)
-4. Be professional and encouraging"""
+4. Be professional and encouraging
+5. Ensure questions are related to the topics in their uploaded documents"""
         })
 
         # Add conversation history (last 8 messages for context)

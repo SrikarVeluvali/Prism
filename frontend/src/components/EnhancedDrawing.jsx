@@ -25,6 +25,7 @@ const EnhancedDrawing = ({ initialData, onChange }) => {
   const [textInput, setTextInput] = useState('');
   const [textPosition, setTextPosition] = useState(null);
   const [initialized, setInitialized] = useState(false);
+  const [tempCanvas, setTempCanvas] = useState(null);
 
   const colorPalette = [
     '#000000', '#ffffff', '#ff0000', '#00ff00',
@@ -156,6 +157,11 @@ const EnhancedDrawing = ({ initialData, onChange }) => {
     setIsDrawing(true);
     setStartPos(pos);
 
+    // Save current canvas state for shapes (rectangle, circle, line)
+    if (['rectangle', 'circle', 'line'].includes(tool)) {
+      setTempCanvas(ctx.getImageData(0, 0, canvas.width, canvas.height));
+    }
+
     if (tool === 'pen' || tool === 'eraser') {
       ctx.beginPath();
       ctx.moveTo(pos.x, pos.y);
@@ -185,10 +191,9 @@ const EnhancedDrawing = ({ initialData, onChange }) => {
       ctx.lineJoin = 'round';
       ctx.lineTo(pos.x, pos.y);
       ctx.stroke();
-    } else if (['rectangle', 'circle', 'line'].includes(tool)) {
-      if (historyStep >= 0 && history[historyStep]) {
-        loadFromHistory(historyStep);
-      }
+    } else if (['rectangle', 'circle', 'line'].includes(tool) && tempCanvas) {
+      // Restore the canvas to the state before starting the shape
+      ctx.putImageData(tempCanvas, 0, 0);
 
       ctx.strokeStyle = color;
       ctx.lineWidth = lineWidth;
@@ -216,6 +221,7 @@ const EnhancedDrawing = ({ initialData, onChange }) => {
   const stopDrawing = () => {
     if (isDrawing) {
       setIsDrawing(false);
+      setTempCanvas(null);
       saveToHistory();
     }
   };

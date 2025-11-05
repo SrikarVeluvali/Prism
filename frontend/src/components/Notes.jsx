@@ -328,14 +328,199 @@ function Notes({ documents, selectedDocIds, notebookId }) {
     }
   };
 
+  const convertImageToBase64 = (url) => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        try {
+          const dataURL = canvas.toDataURL('image/png');
+          resolve(dataURL);
+        } catch (e) {
+          // If CORS fails, return original URL
+          resolve(url);
+        }
+      };
+      img.onerror = () => {
+        // If image fails to load, return original URL
+        resolve(url);
+      };
+      img.src = url;
+    });
+  };
+
+  const exportDrawingAsPNG = (note) => {
+    try {
+      // For drawings, the content is already a base64 data URL
+      const link = document.createElement('a');
+      link.download = `${note.title}.png`;
+      link.href = note.content;
+      link.click();
+    } catch (error) {
+      console.error('Error exporting drawing:', error);
+      showNotification('Failed to export drawing', 'error');
+    }
+  };
+
   const exportNoteToPDF = async (note) => {
-    const pdf = new jsPDF();
-    pdf.setFontSize(16);
-    pdf.text(note.title, 10, 10);
-    pdf.setFontSize(12);
-    const splitContent = pdf.splitTextToSize(note.content.replace(/<[^>]*>/g, ''), 180);
-    pdf.text(splitContent, 10, 20);
-    pdf.save(`${note.title}.pdf`);
+    try {
+      // Create a temporary container for rendering
+      const container = document.createElement('div');
+      container.style.position = 'absolute';
+      container.style.left = '-9999px';
+      container.style.width = '800px';
+      container.style.padding = '40px';
+      container.style.backgroundColor = 'white';
+
+      // Add title
+      const titleElement = document.createElement('h1');
+      titleElement.textContent = note.title;
+      titleElement.style.marginBottom = '20px';
+      titleElement.style.color = 'black';
+      container.appendChild(titleElement);
+
+      // Add tags if present
+      if (note.tags && note.tags.length > 0) {
+        const tagsContainer = document.createElement('div');
+        tagsContainer.style.marginBottom = '20px';
+        tagsContainer.style.display = 'flex';
+        tagsContainer.style.flexWrap = 'wrap';
+        tagsContainer.style.gap = '8px';
+
+        note.tags.forEach(tag => {
+          const tagSpan = document.createElement('span');
+          tagSpan.textContent = tag;
+          tagSpan.style.padding = '4px 12px';
+          tagSpan.style.background = 'rgba(99, 102, 241, 0.1)';
+          tagSpan.style.border = '1px solid rgba(99, 102, 241, 0.2)';
+          tagSpan.style.borderRadius = '6px';
+          tagSpan.style.fontSize = '12px';
+          tagSpan.style.color = '#6366f1';
+          tagsContainer.appendChild(tagSpan);
+        });
+
+        container.appendChild(tagsContainer);
+      }
+
+      // Add content with styling
+      const contentElement = document.createElement('div');
+      contentElement.className = 'note-rich-content';
+      contentElement.innerHTML = note.content;
+
+      // Apply inline styles to ensure they're captured
+      contentElement.style.fontSize = '14px';
+      contentElement.style.lineHeight = '1.8';
+      contentElement.style.color = 'black';
+
+      // Convert all images to base64 to avoid CORS issues
+      const images = contentElement.querySelectorAll('img');
+      const imageConversionPromises = Array.from(images).map(async (img) => {
+        const originalSrc = img.src;
+        try {
+          const base64Src = await convertImageToBase64(originalSrc);
+          img.src = base64Src;
+        } catch (e) {
+          console.warn('Failed to convert image:', originalSrc);
+        }
+
+        // Style images
+        img.style.maxWidth = '100%';
+        img.style.height = 'auto';
+        img.style.borderRadius = '8px';
+        img.style.margin = '1em 0';
+        img.style.display = 'block';
+      });
+
+      await Promise.all(imageConversionPromises);
+
+      // Style code blocks
+      const codeBlocks = contentElement.querySelectorAll('pre');
+      codeBlocks.forEach(pre => {
+        pre.style.background = '#2d2d2d';
+        pre.style.color = '#f8f8f2';
+        pre.style.padding = '16px';
+        pre.style.borderRadius = '8px';
+        pre.style.overflowX = 'auto';
+        pre.style.margin = '1em 0';
+        pre.style.border = '1px solid #404040';
+
+        const code = pre.querySelector('code');
+        if (code) {
+          code.style.background = 'transparent';
+          code.style.fontSize = '13px';
+          code.style.lineHeight = '1.6';
+          code.style.fontFamily = "'Courier New', 'Consolas', monospace";
+        }
+      });
+
+      // Style inline code
+      const inlineCodes = contentElement.querySelectorAll('code:not(pre code)');
+      inlineCodes.forEach(code => {
+        code.style.background = '#2d2d2d';
+        code.style.color = '#f8f8f2';
+        code.style.padding = '2px 6px';
+        code.style.borderRadius = '4px';
+        code.style.fontFamily = "'Courier New', 'Consolas', monospace";
+        code.style.fontSize = '0.9em';
+      });
+
+      container.appendChild(contentElement);
+      document.body.appendChild(container);
+
+      // Give a small delay to ensure everything is rendered
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // Capture the container as canvas
+      const canvas = await html2canvas(container, {
+        scale: 2,
+        useCORS: false,
+        allowTaint: false,
+        backgroundColor: 'white',
+        logging: false,
+      });
+
+      // Remove temporary container
+      document.body.removeChild(container);
+
+      // Create PDF
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'px',
+        format: 'a4',
+      });
+
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = canvas.width;
+      const imgHeight = canvas.height;
+      const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
+      const imgX = 0;
+      const imgY = 0;
+
+      pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth * ratio, imgHeight * ratio);
+
+      // Handle multi-page content
+      let heightLeft = imgHeight * ratio - pdfHeight;
+      let position = -pdfHeight;
+
+      while (heightLeft > 0) {
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', imgX, position, imgWidth * ratio, imgHeight * ratio);
+        heightLeft -= pdfHeight;
+        position -= pdfHeight;
+      }
+
+      pdf.save(`${note.title}.pdf`);
+    } catch (error) {
+      console.error('Error exporting PDF:', error);
+      showNotification('Failed to export PDF', 'error');
+    }
   };
 
   const exportNoteToMarkdown = (note) => {
@@ -388,11 +573,10 @@ function Notes({ documents, selectedDocIds, notebookId }) {
             }}
           />
         ) : (
-          <div className="note-rich-content">
-            <ReactMarkdown rehypePlugins={[rehypeRaw]}>
-              {content}
-            </ReactMarkdown>
-          </div>
+          <div
+            className="note-rich-content"
+            dangerouslySetInnerHTML={{ __html: content }}
+          />
         );
 
       case 'text':
@@ -575,6 +759,23 @@ function Notes({ documents, selectedDocIds, notebookId }) {
           >
             <FiFilter />
           </button>
+
+          {/* <div className="view-toggle">
+            <button
+              onClick={() => setViewMode('grid')}
+              className={viewMode === 'grid' ? 'active' : ''}
+              title="Grid View"
+            >
+              <FiGrid />
+            </button>
+            {/* <button
+              onClick={() => setViewMode('list')}
+              className={viewMode === 'list' ? 'active' : ''}
+              title="List View"
+            >
+              <FiList />
+            </button>
+          </div> */}
 
           <button onClick={openNamePrompt} className="action-button primary">
             <FiPlus /> New Note
@@ -832,9 +1033,15 @@ function Notes({ documents, selectedDocIds, notebookId }) {
               </div>
               <div className="note-view-actions">
                 <button
-                  onClick={() => exportNoteToPDF(viewingNote)}
+                  onClick={() => {
+                    if (viewingNote.note_type === 'drawing') {
+                      exportDrawingAsPNG(viewingNote);
+                    } else {
+                      exportNoteToPDF(viewingNote);
+                    }
+                  }}
                   className="icon-button"
-                  title="Export as PDF"
+                  title={viewingNote.note_type === 'drawing' ? 'Download as PNG' : 'Export as PDF'}
                 >
                   <FiDownload />
                 </button>
