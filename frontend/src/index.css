@@ -3834,6 +3834,44 @@ body {
   padding-left: 1.5em;
 }
 
+/* Images in note view */
+.note-rich-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  margin: 1em 0;
+  display: block;
+}
+
+/* Inline code in note view */
+.note-rich-content code {
+  background: #2d2d2d;
+  color: #f8f8f2;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Courier New', 'Consolas', monospace;
+  font-size: 0.9em;
+}
+
+/* Code blocks in note view */
+.note-rich-content pre {
+  background: #2d2d2d;
+  color: #f8f8f2;
+  padding: 16px;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 1em 0;
+  border: 1px solid #404040;
+}
+
+.note-rich-content pre code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .note-view-meta {
   display: flex;
   justify-content: space-between;
@@ -3992,7 +4030,8 @@ body {
   position: relative;
 }
 
-.highlight-dropdown:hover .highlight-colors {
+.highlight-dropdown:hover .highlight-colors,
+.highlight-colors:hover {
   display: flex;
 }
 
@@ -4001,7 +4040,7 @@ body {
   position: absolute;
   top: 100%;
   left: 0;
-  margin-top: 4px;
+  margin-top: 2px;
   padding: 8px;
   background: white;
   border: 1px solid var(--border);
@@ -4009,6 +4048,8 @@ body {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   gap: 4px;
   z-index: 10;
+  flex-wrap: wrap;
+  max-width: 200px;
 }
 
 .color-button {
@@ -4063,18 +4104,30 @@ body {
 }
 
 .rich-text-editor-content code {
-  background: var(--bg-secondary);
+  background: #2d2d2d;
+  color: #f8f8f2;
   padding: 2px 6px;
-  border-radius: 3px;
-  font-family: 'Courier New', monospace;
+  border-radius: 4px;
+  font-family: 'Courier New', 'Consolas', monospace;
   font-size: 0.9em;
 }
 
 .rich-text-editor-content pre {
-  background: var(--bg-secondary);
-  padding: 12px;
-  border-radius: 6px;
+  background: #2d2d2d;
+  color: #f8f8f2;
+  padding: 16px;
+  border-radius: 8px;
   overflow-x: auto;
+  margin: 1em 0;
+  border: 1px solid #404040;
+}
+
+.rich-text-editor-content pre code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .rich-text-editor-content blockquote {

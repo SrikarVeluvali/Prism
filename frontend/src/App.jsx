@@ -18,7 +18,7 @@
  */
 
 import { useState, useRef, useEffect } from 'react'
-import { FiUpload, FiSend, FiTrash2, FiFile, FiMessageSquare, FiAward, FiFileText, FiArrowLeft, FiEdit3, FiEye, FiMic, FiTrendingUp, FiAlertTriangle } from 'react-icons/fi'
+import { FiUpload, FiSend, FiTrash2, FiFile, FiMessageSquare, FiAward, FiFileText, FiArrowLeft, FiEdit3, FiEye, FiMic, FiTrendingUp, FiAlertTriangle, FiCheck } from 'react-icons/fi'
 import axios from 'axios'
 import FileUploadModal from './components/FileUploadModal'
 import Quiz from './components/Quiz'
@@ -399,7 +399,11 @@ function AppContent() {
                 onClick={() => toggleDocumentSelection(doc.id)}
               >
                 <div className="document-name">
-                  <FiFile style={{ display: 'inline', marginRight: '6px', color: 'var(--text-secondary)' }} />
+                  {selectedDocIds.includes(doc.id) ? (
+                    <FiCheck style={{ display: 'inline', marginRight: '6px', color: 'var(--accent-primary)' }} />
+                  ) : (
+                    <FiFile style={{ display: 'inline', marginRight: '6px', color: 'var(--text-secondary)' }} />
+                  )}
                   {doc.filename}
                 </div>
                 <div className="document-info">
@@ -570,7 +574,7 @@ function AppContent() {
             </div>
           )
         ) : mode === 'interview' ? (
-          <VirtualInterview notebookId={selectedNotebook.id} />
+          <VirtualInterview documents={documents} selectedDocIds={selectedDocIds} notebookId={selectedNotebook.id} />
         ) : mode === 'doomscroll' ? (
           <Doomscroll documents={documents} notebookId={selectedNotebook.id} />
         ) : null}
