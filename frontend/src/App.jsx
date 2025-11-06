@@ -18,7 +18,7 @@
  */
 
 import { useState, useRef, useEffect } from 'react'
-import { FiUpload, FiSend, FiTrash2, FiFile, FiMessageSquare, FiAward, FiFileText, FiArrowLeft, FiEdit3, FiEye, FiMic, FiTrendingUp, FiAlertTriangle, FiCheck } from 'react-icons/fi'
+import { FiUpload, FiSend, FiTrash2, FiFile, FiMessageSquare, FiAward, FiFileText, FiArrowLeft, FiEdit3, FiEye, FiMic, FiTrendingUp, FiAlertTriangle, FiCheck, FiLogOut } from 'react-icons/fi'
 import axios from 'axios'
 import FileUploadModal from './components/FileUploadModal'
 import Quiz from './components/Quiz'
@@ -28,7 +28,10 @@ import DocumentViewer from './components/DocumentViewer'
 import VirtualInterview from './components/VirtualInterview'
 import Doomscroll from './components/Doomscroll'
 import Library from './components/Library'
+import Auth from './components/Auth'
+import Navbar from './components/Navbar'
 import { NotebookProvider, useNotebook } from './contexts/NotebookContext'
+import { useAuth } from './contexts/AuthContext'
 import './index.css'
 import './library-styles.css'
 import ReactMarkdown from 'react-markdown'
@@ -41,6 +44,7 @@ const API_URL = 'http://localhost:8000'
  * Main application logic wrapped by NotebookProvider
  */
 function AppContent() {
+  const { user, loading, isAuthenticated, login, logout } = useAuth()
   const { selectedNotebook, selectNotebook, clearNotebook } = useNotebook()
   const [mode, setMode] = useState('chat') // 'chat', 'assessment', 'notes', 'pdf', 'interview', 'doomscroll'
   const [assessmentType, setAssessmentType] = useState(null) // 'quiz' or 'mocktest'
@@ -63,6 +67,18 @@ function AppContent() {
   })
   const chatEndRef = useRef(null)
   const textareaRef = useRef(null)
+
+  // Clear all state when user logs out or changes
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setMessages([])
+      setDocuments([])
+      setSelectedDocIds([])
+      setInputValue('')
+      setMode('chat')
+      setAssessmentType(null)
+    }
+  }, [isAuthenticated])
 
   useEffect(() => {
     if (selectedNotebook) {
@@ -274,20 +290,33 @@ function AppContent() {
   }
 
   // Show Library if no notebook is selected
+  // Show loading state while checking authentication
+  if (loading) {
+    return (
+      <div className="auth-container">
+        <div className="auth-card">
+          <div className="auth-header">
+            <h1 className="auth-logo">PRISM</h1>
+            <p className="auth-tagline">Loading...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Show auth screen if not authenticated
+  if (!isAuthenticated) {
+    return <Auth onAuth={login} />
+  }
+
   if (!selectedNotebook) {
     return <Library onSelectNotebook={selectNotebook} />
   }
 
   return (
     <div className="app">
-      {/* PRISM App Header */}
-      <div className="app-header">
-        <div className="app-logo-section">
-          <img src="/logo.png" alt="PRISM Logo" className="app-logo" />
-          <h1 className="app-title">PRISM</h1>
-        </div>
-        <div className="app-subtitle">AI-Powered Learning Platform</div>
-      </div>
+      {/* Navbar */}
+      <Navbar />
 
       <div className="app-body">
         <div className="sidebar">
