@@ -44,6 +44,9 @@ sync_db = sync_client[DATABASE_NAME]
 # ===================
 # All collections use the async database client for non-blocking operations
 
+# Users: Store user accounts and authentication data
+users_collection = async_db["users"]
+
 # Notebooks: Store user-created notebooks with metadata (name, color, icon)
 notebooks_collection = async_db["notebooks"]
 
@@ -90,7 +93,12 @@ def init_db():
         Exception: If index creation fails (logged but doesn't crash the application)
     """
     try:
+        # Users indexes
+        sync_db["users"].create_index("email", unique=True)
+        sync_db["users"].create_index("created_at")
+
         # Notebooks indexes
+        sync_db["notebooks"].create_index("user_id")
         sync_db["notebooks"].create_index("created_at")
 
         # Documents indexes

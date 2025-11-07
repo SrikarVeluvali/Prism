@@ -8,6 +8,8 @@
 import { useState, useEffect } from 'react'
 import { FiPlus, FiEdit2, FiTrash2, FiX, FiCheck, FiBookOpen, FiAlertCircle, FiCheckCircle, FiAlertTriangle } from 'react-icons/fi'
 import axios from 'axios'
+import Navbar from './Navbar'
+import { useAuth } from '../contexts/AuthContext'
 import '../library-styles.css'
 
 const API_URL = 'http://localhost:8000'
@@ -30,6 +32,7 @@ const PRESET_COLORS = [
 const PRESET_ICONS = ['📚', '📖', '📝', '🎓', '💡', '🚀', '⭐', '🔥', '🎯', '💻', '🌟', '📊']
 
 function Library({ onSelectNotebook }) {
+  const { isAuthenticated, loading: authLoading } = useAuth()
   const [notebooks, setNotebooks] = useState([])
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
@@ -49,9 +52,12 @@ function Library({ onSelectNotebook }) {
     onConfirm: null
   })
 
+  // Only fetch notebooks when auth is ready and user is authenticated
   useEffect(() => {
-    fetchNotebooks()
-  }, [])
+    if (!authLoading && isAuthenticated) {
+      fetchNotebooks()
+    }
+  }, [authLoading, isAuthenticated])
 
   const fetchNotebooks = async () => {
     try {
@@ -150,16 +156,15 @@ function Library({ onSelectNotebook }) {
 
   return (
     <div className="library-container">
-      {/* PRISM Header */}
-      <header className="library-header">
-        <div className="library-brand">
-          <img src="/logo.png" alt="PRISM" className="library-logo" />
-          <div className="library-brand-text">
-            <h1 className="library-brand-title">PRISM</h1>
-            <p className="library-brand-subtitle">My Library</p>
-          </div>
-        </div>
+      {/* Navbar */}
+      <Navbar />
 
+      {/* Library Header */}
+      <header className="library-subheader">
+        <div className="library-title-section">
+          <h2 className="library-title">My Library</h2>
+          <p className="library-description">Organize your learning materials into notebooks</p>
+        </div>
         <button className="btn-create" onClick={() => setShowCreateModal(true)}>
           <FiPlus size={18} />
           <span>New Notebook</span>
@@ -168,7 +173,15 @@ function Library({ onSelectNotebook }) {
 
       {/* Notebooks Grid */}
       <main className="library-main">
-        {notebooks.length === 0 ? (
+        {authLoading ? (
+          <div className="library-empty-state">
+            <div className="empty-icon">
+              <FiBookOpen size={64} />
+            </div>
+            <h2 className="empty-title">Loading your library...</h2>
+            <p className="empty-description">Please wait while we fetch your notebooks</p>
+          </div>
+        ) : notebooks.length === 0 ? (
           <div className="library-empty-state">
             <div className="empty-icon">
               <FiBookOpen size={64} />

@@ -17,6 +17,7 @@
  */
 
 import { createContext, useContext, useState, useEffect } from 'react'
+import { useAuth } from './AuthContext'
 
 // Create the context
 const NotebookContext = createContext()
@@ -44,11 +45,23 @@ export const useNotebook = () => {
  * @param {React.ReactNode} props.children - Child components
  */
 export const NotebookProvider = ({ children }) => {
+  const { isAuthenticated } = useAuth()
   // Currently selected notebook state
   const [selectedNotebook, setSelectedNotebook] = useState(null)
 
-  // Load selected notebook from localStorage on mount
+  // Clear notebook selection when user logs out
   useEffect(() => {
+    if (!isAuthenticated) {
+      setSelectedNotebook(null)
+      localStorage.removeItem('selectedNotebookId')
+      localStorage.removeItem('selectedNotebook')
+    }
+  }, [isAuthenticated])
+
+  // Load selected notebook from localStorage on mount (only if authenticated)
+  useEffect(() => {
+    if (!isAuthenticated) return
+
     try {
       const savedNotebookId = localStorage.getItem('selectedNotebookId')
       if (savedNotebookId) {
@@ -66,7 +79,7 @@ export const NotebookProvider = ({ children }) => {
       localStorage.removeItem('selectedNotebookId')
       localStorage.removeItem('selectedNotebook')
     }
-  }, [])
+  }, [isAuthenticated])
 
   // Save selected notebook to localStorage whenever it changes
   useEffect(() => {

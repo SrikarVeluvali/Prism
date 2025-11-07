@@ -20,7 +20,7 @@ Author: Srikar
 Project: PRISM
 """
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -52,6 +52,7 @@ from processors import (
 
 # Import database collections and initialization function
 from database import (
+    users_collection,
     notebooks_collection,
     documents_collection,
     quiz_results_collection,
@@ -63,6 +64,21 @@ from database import (
     saved_cards_collection,
     doomscroll_folders_collection,
     init_db
+)
+
+# Import authentication utilities
+from auth import (
+    get_password_hash,
+    verify_password,
+    create_access_token,
+    get_current_user,
+    verify_google_token,
+    UserCreate,
+    UserLogin,
+    GoogleAuthRequest,
+    Token,
+    User,
+    TokenData
 )
 
 # Load environment variables from .env file
@@ -304,6 +320,7 @@ class AnnotationQueryRequest(BaseModel):
     """Model for asking questions about a specific annotation"""
     annotation_id: str
     question: str
+    context: Optional[str] = None  # Context text (transcript or highlighted text)
 
 
 class YouTubeURLSubmit(BaseModel):
@@ -497,10 +514,146 @@ def read_root():
     return {"message": "RAG API is running"}
 
 
+# ==================== AUTHENTICATION ENDPOINTS ====================
+
+@app.post("/auth/register", response_model=Token)
+async def register(user_data: UserCreate):
+    """Register a new user with email and password"""
+    try:
+        # Check if user already exists
+        existing_user = await users_collection.find_one({"email": user_data.email})
+        if existing_user:
+            raise HTTPException(
+                status_code=400,
+                detail="Email already registered"
+            )
+
+        # Hash password
+        hashed_password = get_password_hash(user_data.password)
+
+        # Create user document
+        user_doc = {
+            "name": user_data.name,
+            "email": user_data.email,
+            "password": hashed_password,
+            "auth_provider": "local",
+            "created_at": datetime.utcnow()
+        }
+
+        # Insert user into database
+        result = await users_collection.insert_one(user_doc)
+        user_id = str(result.inserted_id)
+
+        # Create access token
+        access_token = create_access_token(
+            data={"sub": user_data.email, "user_id": user_id}
+        )
+
+        return {"access_token": access_token, "token_type": "bearer"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/auth/login", response_model=Token)
+async def login(user_data: UserLogin):
+    """Login with email and password"""
+    try:
+        # Find user by email
+        user = await users_collection.find_one({"email": user_data.email})
+
+        if not user:
+            raise HTTPException(
+                status_code=401,
+                detail="Incorrect email or password"
+            )
+
+        # Verify password
+        if not verify_password(user_data.password, user["password"]):
+            raise HTTPException(
+                status_code=401,
+                detail="Incorrect email or password"
+            )
+
+        # Create access token
+        access_token = create_access_token(
+            data={"sub": user["email"], "user_id": str(user["_id"])}
+        )
+
+        return {"access_token": access_token, "token_type": "bearer"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/auth/google", response_model=Token)
+async def google_auth(auth_data: GoogleAuthRequest):
+    """Authenticate with Google OAuth token"""
+    try:
+        # Verify Google token and get user info
+        google_user = verify_google_token(auth_data.token)
+
+        # Check if user exists
+        user = await users_collection.find_one({"email": google_user["email"]})
+
+        if not user:
+            # Create new user
+            user_doc = {
+                "name": google_user["name"],
+                "email": google_user["email"],
+                "google_id": google_user["google_id"],
+                "auth_provider": "google",
+                "created_at": datetime.utcnow()
+            }
+            result = await users_collection.insert_one(user_doc)
+            user_id = str(result.inserted_id)
+        else:
+            user_id = str(user["_id"])
+
+        # Create access token
+        access_token = create_access_token(
+            data={"sub": google_user["email"], "user_id": user_id}
+        )
+
+        return {"access_token": access_token, "token_type": "bearer"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/auth/me", response_model=User)
+async def get_me(current_user: TokenData = Depends(get_current_user)):
+    """Get current user information"""
+    try:
+        user = await users_collection.find_one({"_id": ObjectId(current_user.user_id)})
+
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        return {
+            "id": str(user["_id"]),
+            "name": user["name"],
+            "email": user["email"],
+            "created_at": user["created_at"],
+            "auth_provider": user.get("auth_provider", "local")
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ==================== NOTEBOOK ENDPOINTS ====================
 
 @app.post("/notebooks")
-async def create_notebook(notebook: NotebookCreate):
+async def create_notebook(notebook: NotebookCreate, current_user: TokenData = Depends(get_current_user)):
     """
     Create a new notebook.
 
@@ -509,6 +662,7 @@ async def create_notebook(notebook: NotebookCreate):
     """
     try:
         notebook_data = {
+            "user_id": current_user.user_id,
             "name": notebook.name,
             "color": notebook.color,
             "icon": notebook.icon,
@@ -524,11 +678,11 @@ async def create_notebook(notebook: NotebookCreate):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/notebooks")
-async def get_notebooks():
-    """Get all notebooks"""
+async def get_notebooks(current_user: TokenData = Depends(get_current_user)):
+    """Get all notebooks for the current user"""
     try:
         notebooks = []
-        async for notebook in notebooks_collection.find().sort("created_at", -1):
+        async for notebook in notebooks_collection.find({"user_id": current_user.user_id}).sort("created_at", -1):
             # Count documents for this notebook
             doc_count = await documents_collection.count_documents({"notebook_id": str(notebook["_id"])})
             notebook["document_count"] = doc_count
@@ -539,10 +693,13 @@ async def get_notebooks():
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/notebooks/{notebook_id}")
-async def get_notebook(notebook_id: str):
+async def get_notebook(notebook_id: str, current_user: TokenData = Depends(get_current_user)):
     """Get a specific notebook"""
     try:
-        notebook = await notebooks_collection.find_one({"_id": ObjectId(notebook_id)})
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(notebook_id),
+            "user_id": current_user.user_id
+        })
         if not notebook:
             raise HTTPException(status_code=404, detail="Notebook not found")
 
@@ -554,7 +711,7 @@ async def get_notebook(notebook_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.put("/notebooks/{notebook_id}")
-async def update_notebook(notebook_id: str, notebook_update: NotebookUpdate):
+async def update_notebook(notebook_id: str, notebook_update: NotebookUpdate, current_user: TokenData = Depends(get_current_user)):
     """Update a notebook"""
     try:
         update_data = {}
@@ -569,7 +726,7 @@ async def update_notebook(notebook_id: str, notebook_update: NotebookUpdate):
             raise HTTPException(status_code=400, detail="No update data provided")
 
         result = await notebooks_collection.update_one(
-            {"_id": ObjectId(notebook_id)},
+            {"_id": ObjectId(notebook_id), "user_id": current_user.user_id},
             {"$set": update_data}
         )
 
@@ -585,9 +742,17 @@ async def update_notebook(notebook_id: str, notebook_update: NotebookUpdate):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/notebooks/{notebook_id}")
-async def delete_notebook(notebook_id: str):
+async def delete_notebook(notebook_id: str, current_user: TokenData = Depends(get_current_user)):
     """Delete a notebook and all its documents"""
     try:
+        # Verify ownership
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(notebook_id),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
         # Delete all documents associated with this notebook
         await documents_collection.delete_many({"notebook_id": notebook_id})
 
@@ -702,11 +867,14 @@ async def upload_pdfs(notebook_id: str, files: List[UploadFile] = File(...)):
 
 
 @app.post("/upload-documents/{notebook_id}")
-async def upload_documents(notebook_id: str, files: List[UploadFile] = File(...)):
+async def upload_documents(notebook_id: str, files: List[UploadFile] = File(...), current_user: TokenData = Depends(get_current_user)):
     """Upload and process multiple documents (PDF, TXT, MD, RTF, DOCX, DOC) for a notebook"""
     try:
-        # Verify notebook exists
-        notebook = await notebooks_collection.find_one({"_id": ObjectId(notebook_id)})
+        # Verify notebook exists and user owns it
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(notebook_id),
+            "user_id": current_user.user_id
+        })
         if not notebook:
             raise HTTPException(status_code=404, detail="Notebook not found")
 
@@ -822,11 +990,14 @@ async def upload_documents(notebook_id: str, files: List[UploadFile] = File(...)
 
 
 @app.post("/add-youtube/{notebook_id}")
-async def add_youtube_video(notebook_id: str, video_data: YouTubeURLSubmit):
+async def add_youtube_video(notebook_id: str, video_data: YouTubeURLSubmit, current_user: TokenData = Depends(get_current_user)):
     """Add a YouTube video to a notebook by URL"""
     try:
-        # Verify notebook exists
-        notebook = await notebooks_collection.find_one({"_id": ObjectId(notebook_id)})
+        # Verify notebook ownership
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(notebook_id),
+            "user_id": current_user.user_id
+        })
         if not notebook:
             raise HTTPException(status_code=404, detail="Notebook not found")
 
@@ -918,7 +1089,7 @@ async def add_youtube_video(notebook_id: str, video_data: YouTubeURLSubmit):
 
 
 @app.post("/upload-image")
-async def upload_image(file: UploadFile = File(...)):
+async def upload_image(file: UploadFile = File(...), current_user: TokenData = Depends(get_current_user)):
     """Upload an image for use in rich text notes"""
     try:
         # Validate file type
@@ -957,9 +1128,17 @@ async def upload_image(file: UploadFile = File(...)):
 
 
 @app.get("/documents/{notebook_id}")
-async def get_documents(notebook_id: str):
+async def get_documents(notebook_id: str, current_user: TokenData = Depends(get_current_user)):
     """Get list of uploaded documents for a notebook"""
     try:
+        # Verify notebook ownership
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(notebook_id),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
         documents = []
         async for doc in documents_collection.find({"notebook_id": notebook_id}).sort("uploaded_at", -1):
             doc_info = {
@@ -1131,7 +1310,7 @@ async def get_document_metadata(notebook_id: str, doc_id: str):
 
 
 @app.delete("/documents/{doc_id}")
-async def delete_document(doc_id: str):
+async def delete_document(doc_id: str, current_user: TokenData = Depends(get_current_user)):
     """Delete a document and its vectors"""
     try:
         # Find the document
@@ -1140,6 +1319,14 @@ async def delete_document(doc_id: str):
             raise HTTPException(status_code=404, detail="Document not found")
 
         notebook_id = doc["notebook_id"]
+
+        # Verify notebook ownership
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(notebook_id),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=403, detail="Access denied")
 
         # Delete the PDF file from disk
         if "file_path" in doc:
@@ -1168,9 +1355,17 @@ async def delete_document(doc_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/ask")
-async def ask_question(request: QuestionRequest):
+async def ask_question(request: QuestionRequest, current_user: TokenData = Depends(get_current_user)):
     """Ask a question about the uploaded documents"""
     try:
+        # Verify notebook ownership
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(request.notebook_id),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
         # Get question embedding
         question_embedding = embedding_model.encode(request.question).tolist()
 
@@ -1241,9 +1436,17 @@ Answer:"""
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/generate-quiz")
-async def generate_quiz(request: QuizGenerateRequest):
+async def generate_quiz(request: QuizGenerateRequest, current_user: TokenData = Depends(get_current_user)):
     """Generate a quiz based on uploaded documents"""
     try:
+        # Verify notebook ownership
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(request.notebook_id),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
         print(f"Generating quiz with {request.num_questions} questions, difficulty: {request.difficulty}")
 
         # Check if notebook has documents
@@ -1477,10 +1680,18 @@ Keep the response concise, encouraging, and actionable."""
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/generate-mock-test")
-async def generate_mock_test(request: MockTestGenerateRequest):
+async def generate_mock_test(request: MockTestGenerateRequest, current_user: TokenData = Depends(get_current_user)):
     """Generate a comprehensive mock test with theory, coding, and reorder questions"""
     try:
         print(f"Generating mock test: {request.num_theory} theory, {request.num_coding} coding, {request.num_reorder} reorder")
+
+        # Verify notebook ownership
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(request.notebook_id),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
 
         # Check if notebook has documents
         doc_count = await documents_collection.count_documents({"notebook_id": request.notebook_id})
@@ -1617,6 +1828,7 @@ IMPORTANT: Return ONLY the JSON object, no additional text."""
         # Store test with correct answers
         mock_tests_store[test_id] = {
             "id": test_id,
+            "user_id": current_user.user_id,
             "theory_questions": test_data.get("theory_questions", []),
             "coding_questions": test_data.get("coding_questions", []) if has_code else [],
             "reorder_questions": test_data.get("reorder_questions", []),
@@ -1665,7 +1877,7 @@ IMPORTANT: Return ONLY the JSON object, no additional text."""
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/submit-mock-test")
-async def submit_mock_test(request: MockTestSubmitRequest):
+async def submit_mock_test(request: MockTestSubmitRequest, current_user: TokenData = Depends(get_current_user)):
     """Submit mock test answers and get AI evaluation"""
     try:
         print(f"Submitting mock test: {request.test_id}")
@@ -1674,6 +1886,10 @@ async def submit_mock_test(request: MockTestSubmitRequest):
             raise HTTPException(status_code=404, detail="Test not found")
 
         test = mock_tests_store[request.test_id]
+
+        # Verify test ownership
+        if test.get("user_id") != current_user.user_id:
+            raise HTTPException(status_code=403, detail="Access denied")
 
         print(f"Test found. Theory: {len(test['theory_questions'])}, Coding: {len(test['coding_questions'])}, Reorder: {len(test['reorder_questions'])}")
         print(f"Submitted answers - Theory: {len(request.theory_answers)}, Coding: {len(request.coding_answers)}, Reorder: {len(request.reorder_answers)}")
@@ -1965,9 +2181,17 @@ Keep it encouraging but honest and actionable."""
 # ==================== CHAT HISTORY ENDPOINTS ====================
 
 @app.get("/chat-history/{notebook_id}")
-async def get_chat_history(notebook_id: str):
+async def get_chat_history(notebook_id: str, current_user: TokenData = Depends(get_current_user)):
     """Get chat history for a notebook"""
     try:
+        # Verify notebook ownership
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(notebook_id),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
         messages = []
         async for chat in chat_history_collection.find(
             {"notebook_id": notebook_id}
@@ -1982,9 +2206,17 @@ async def get_chat_history(notebook_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/chat-history")
-async def save_chat_message(request: ChatHistorySave):
+async def save_chat_message(request: ChatHistorySave, current_user: TokenData = Depends(get_current_user)):
     """Save chat messages to history"""
     try:
+        # Verify notebook ownership
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(request.notebook_id),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
         # Save each message
         for message in request.messages:
             chat_data = {
@@ -1999,9 +2231,17 @@ async def save_chat_message(request: ChatHistorySave):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/chat-history/{notebook_id}")
-async def clear_chat_history(notebook_id: str):
+async def clear_chat_history(notebook_id: str, current_user: TokenData = Depends(get_current_user)):
     """Clear chat history for a notebook"""
     try:
+        # Verify notebook ownership
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(notebook_id),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
         await chat_history_collection.delete_many({"notebook_id": notebook_id})
         return {"message": "Chat history cleared"}
     except Exception as e:
@@ -2010,9 +2250,17 @@ async def clear_chat_history(notebook_id: str):
 # ==================== NOTES ENDPOINTS ====================
 
 @app.get("/notes/{notebook_id}")
-async def get_notes(notebook_id: str):
+async def get_notes(notebook_id: str, current_user: TokenData = Depends(get_current_user)):
     """Get all notes for a notebook"""
     try:
+        # Verify notebook ownership
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(notebook_id),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
         notes = []
         async for note in notes_collection.find(
             {"notebook_id": notebook_id}
@@ -2032,9 +2280,17 @@ async def get_notes(notebook_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/notes")
-async def create_note(note: NoteCreate):
+async def create_note(note: NoteCreate, current_user: TokenData = Depends(get_current_user)):
     """Create a new note"""
     try:
+        # Verify notebook ownership
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(note.notebook_id),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
         note_data = {
             "notebook_id": note.notebook_id,
             "title": note.title,
@@ -2063,9 +2319,21 @@ async def create_note(note: NoteCreate):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.put("/notes/{note_id}")
-async def update_note(note_id: str, note_update: NoteUpdate):
+async def update_note(note_id: str, note_update: NoteUpdate, current_user: TokenData = Depends(get_current_user)):
     """Update a note"""
     try:
+        # Verify note ownership through notebook
+        note = await notes_collection.find_one({"_id": ObjectId(note_id)})
+        if not note:
+            raise HTTPException(status_code=404, detail="Note not found")
+
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(note["notebook_id"]),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=403, detail="Access denied")
+
         update_data = {"updated_at": datetime.now().isoformat()}
         if note_update.title is not None:
             update_data["title"] = note_update.title
@@ -2085,18 +2353,38 @@ async def update_note(note_id: str, note_update: NoteUpdate):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/notes/{note_id}")
-async def delete_note(note_id: str):
+async def delete_note(note_id: str, current_user: TokenData = Depends(get_current_user)):
     """Delete a note"""
     try:
+        # Verify note ownership through notebook
+        note = await notes_collection.find_one({"_id": ObjectId(note_id)})
+        if not note:
+            raise HTTPException(status_code=404, detail="Note not found")
+
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(note["notebook_id"]),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=403, detail="Access denied")
+
         await notes_collection.delete_one({"_id": ObjectId(note_id)})
         return {"message": "Note deleted successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/notes/generate")
-async def generate_note(request: NoteGenerateRequest):
+async def generate_note(request: NoteGenerateRequest, current_user: TokenData = Depends(get_current_user)):
     """Generate AI notes from documents"""
     try:
+        # Verify notebook ownership
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(request.notebook_id),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
         # Get relevant documents
         filter_dict = {"notebook_id": request.notebook_id}
         if request.document_ids:
@@ -2201,33 +2489,64 @@ async def generate_note(request: NoteGenerateRequest):
 # ==================== ANNOTATIONS ENDPOINTS ====================
 
 @app.get("/annotations/{notebook_id}")
-async def get_annotations(notebook_id: str, document_id: Optional[str] = None):
+async def get_annotations(notebook_id: str, document_id: Optional[str] = None, current_user: TokenData = Depends(get_current_user)):
     """Get annotations for a notebook or specific document"""
     try:
+        # Verify notebook ownership
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(notebook_id),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
         filter_dict = {"notebook_id": notebook_id}
         if document_id:
             filter_dict["document_id"] = document_id
 
         annotations = []
         async for ann in annotations_collection.find(filter_dict).sort("created_at", -1):
-            annotations.append({
-                "id": str(ann["_id"]),
+            # Build base annotation object
+            annotation_obj = {
+                "_id": str(ann["_id"]),
                 "document_id": ann["document_id"],
-                "page_number": ann["page_number"],
-                "highlighted_text": ann["highlighted_text"],
-                "position": ann["position"],
+                "annotation_type": ann.get("annotation_type", "highlight"),
                 "color": ann.get("color", "#ffeb3b"),
                 "note": ann.get("note"),
                 "created_at": ann["created_at"]
-            })
+            }
+
+            # Add PDF-specific fields if they exist
+            if "page_number" in ann:
+                annotation_obj["page_number"] = ann["page_number"]
+            if "highlighted_text" in ann:
+                annotation_obj["highlighted_text"] = ann["highlighted_text"]
+            if "position" in ann:
+                annotation_obj["position"] = ann["position"]
+
+            # Add video-specific fields if they exist
+            if "timestamp_start" in ann:
+                annotation_obj["timestamp_start"] = ann["timestamp_start"]
+            if "timestamp_end" in ann:
+                annotation_obj["timestamp_end"] = ann["timestamp_end"]
+
+            annotations.append(annotation_obj)
         return {"annotations": annotations}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/annotations")
-async def create_annotation(annotation: AnnotationCreate):
+async def create_annotation(annotation: AnnotationCreate, current_user: TokenData = Depends(get_current_user)):
     """Create a new annotation (text highlight or video timestamp)"""
     try:
+        # Verify notebook ownership
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(annotation.notebook_id),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
         ann_data = {
             "notebook_id": annotation.notebook_id,
             "document_id": annotation.document_id,
@@ -2276,16 +2595,28 @@ async def create_annotation(annotation: AnnotationCreate):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/annotations/{annotation_id}")
-async def delete_annotation(annotation_id: str):
+async def delete_annotation(annotation_id: str, current_user: TokenData = Depends(get_current_user)):
     """Delete an annotation"""
     try:
+        # Verify annotation ownership through notebook
+        annotation = await annotations_collection.find_one({"_id": ObjectId(annotation_id)})
+        if not annotation:
+            raise HTTPException(status_code=404, detail="Annotation not found")
+
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(annotation["notebook_id"]),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=403, detail="Access denied")
+
         await annotations_collection.delete_one({"_id": ObjectId(annotation_id)})
         return {"message": "Annotation deleted successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/annotations/query")
-async def query_annotation(request: AnnotationQueryRequest):
+async def query_annotation(request: AnnotationQueryRequest, current_user: TokenData = Depends(get_current_user)):
     """Ask AI about highlighted text"""
     try:
         # Get the annotation
@@ -2293,10 +2624,27 @@ async def query_annotation(request: AnnotationQueryRequest):
         if not annotation:
             raise HTTPException(status_code=404, detail="Annotation not found")
 
-        # Create prompt with context
-        prompt = f"""Based on this highlighted text from the document:
+        # Verify annotation ownership through notebook
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(annotation["notebook_id"]),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=403, detail="Access denied")
 
-"{annotation['highlighted_text']}"
+        # Use context from request or fall back to annotation's highlighted_text
+        context_text = request.context or annotation.get('highlighted_text', '')
+
+        if not context_text:
+            raise HTTPException(status_code=400, detail="No context available for this annotation")
+
+        # Create prompt with context
+        annotation_type = annotation.get('annotation_type', 'highlight')
+        context_label = "transcript segment" if annotation_type in ['timestamp', 'both'] else "highlighted text"
+
+        prompt = f"""Based on this {context_label} from the document:
+
+"{context_text}"
 
 Question: {request.question}
 
@@ -2313,7 +2661,7 @@ Provide a clear and detailed answer."""
 
         return {
             "question": request.question,
-            "highlighted_text": annotation['highlighted_text'],
+            "context": context_text,
             "answer": answer
         }
 
@@ -2326,7 +2674,7 @@ Provide a clear and detailed answer."""
 # ==================== UTILITY ENDPOINTS ====================
 
 @app.delete("/clear-all")
-def clear_all():
+async def clear_all(current_user: TokenData = Depends(get_current_user)):
     """Clear all documents and vectors"""
     try:
         # Delete all vectors from Pinecone
@@ -2363,9 +2711,17 @@ class InterviewEndRequest(BaseModel):
     session_id: str
 
 @app.post("/interview/start")
-async def start_interview(request: InterviewStartRequest):
+async def start_interview(request: InterviewStartRequest, current_user: TokenData = Depends(get_current_user)):
     """Start a new interview session"""
     try:
+        # Verify notebook ownership
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(request.notebook_id),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
         session_id = str(uuid.uuid4())
 
         # Get relevant content from documents in the notebook
@@ -2448,6 +2804,7 @@ Start the interview with a friendly introduction and ask your first question."""
         # Create session in database
         session_data = {
             "session_id": session_id,
+            "user_id": current_user.user_id,
             "notebook_id": request.notebook_id,
             "document_ids": request.document_ids,
             "interview_type": request.interview_type,
@@ -2474,7 +2831,7 @@ Start the interview with a friendly introduction and ask your first question."""
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/interview/respond")
-async def respond_to_interview(request: InterviewRespondRequest):
+async def respond_to_interview(request: InterviewRespondRequest, current_user: TokenData = Depends(get_current_user)):
     """Send user response and get next question"""
     try:
         # Get session from database
@@ -2482,6 +2839,10 @@ async def respond_to_interview(request: InterviewRespondRequest):
 
         if not session:
             raise HTTPException(status_code=404, detail="Interview session not found")
+
+        # Verify session ownership
+        if session.get("user_id") != current_user.user_id:
+            raise HTTPException(status_code=403, detail="Access denied")
 
         # Add user response to messages
         session["messages"].append({
@@ -2582,7 +2943,7 @@ Continue the interview by:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/interview/end")
-async def end_interview(request: InterviewEndRequest):
+async def end_interview(request: InterviewEndRequest, current_user: TokenData = Depends(get_current_user)):
     """End interview session and generate scoring"""
     try:
         # Get session from database
@@ -2590,6 +2951,10 @@ async def end_interview(request: InterviewEndRequest):
 
         if not session:
             raise HTTPException(status_code=404, detail="Interview session not found")
+
+        # Verify session ownership
+        if session.get("user_id") != current_user.user_id:
+            raise HTTPException(status_code=403, detail="Access denied")
 
         # Build transcript for analysis
         transcript = []
@@ -2854,9 +3219,17 @@ Respond in this EXACT JSON format:
     return None
 
 @app.post("/doomscroll/generate")
-async def generate_doomscroll_cards(request: DoomscrollGenerateRequest):
+async def generate_doomscroll_cards(request: DoomscrollGenerateRequest, current_user: TokenData = Depends(get_current_user)):
     """Generate doomscroll cards from notebook documents"""
     try:
+        # Verify notebook ownership
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(request.notebook_id),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
         # Get all documents for the notebook
         documents = await documents_collection.find({
             "notebook_id": request.notebook_id
@@ -2920,9 +3293,17 @@ async def generate_doomscroll_cards(request: DoomscrollGenerateRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/doomscroll/like")
-async def like_doomscroll_card(request: DoomscrollLikeRequest):
+async def like_doomscroll_card(request: DoomscrollLikeRequest, current_user: TokenData = Depends(get_current_user)):
     """Save a doomscroll card"""
     try:
+        # Verify notebook ownership
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(request.notebook_id),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
         # Check if card is already saved
         existing = await saved_cards_collection.find_one({
             "notebook_id": request.notebook_id,
@@ -2957,9 +3338,17 @@ async def like_doomscroll_card(request: DoomscrollLikeRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/doomscroll/saved/{notebook_id}")
-async def get_saved_cards(notebook_id: str):
+async def get_saved_cards(notebook_id: str, current_user: TokenData = Depends(get_current_user)):
     """Get all saved cards for a notebook"""
     try:
+        # Verify notebook ownership
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(notebook_id),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
         cards = await saved_cards_collection.find({
             "notebook_id": notebook_id
         }).sort("created_at", -1).to_list(length=None)
@@ -2976,9 +3365,17 @@ async def get_saved_cards(notebook_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/doomscroll/saved/{notebook_id}/{card_id}")
-async def delete_saved_card(notebook_id: str, card_id: str):
+async def delete_saved_card(notebook_id: str, card_id: str, current_user: TokenData = Depends(get_current_user)):
     """Delete a saved card"""
     try:
+        # Verify notebook ownership
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(notebook_id),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
         result = await saved_cards_collection.delete_one({
             "notebook_id": notebook_id,
             "card_id": card_id
@@ -2996,9 +3393,17 @@ async def delete_saved_card(notebook_id: str, card_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/doomscroll/folders")
-async def create_folder(request: DoomscrollFolderCreate):
+async def create_folder(request: DoomscrollFolderCreate, current_user: TokenData = Depends(get_current_user)):
     """Create a folder for organizing cards"""
     try:
+        # Verify notebook ownership
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(request.notebook_id),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
         folder_doc = {
             "notebook_id": request.notebook_id,
             "name": request.name,
@@ -3017,9 +3422,17 @@ async def create_folder(request: DoomscrollFolderCreate):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/doomscroll/folders/{notebook_id}")
-async def get_folders(notebook_id: str):
+async def get_folders(notebook_id: str, current_user: TokenData = Depends(get_current_user)):
     """Get all folders for a notebook"""
     try:
+        # Verify notebook ownership
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(notebook_id),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
         folders = await doomscroll_folders_collection.find({
             "notebook_id": notebook_id
         }).sort("created_at", 1).to_list(length=None)
@@ -3036,9 +3449,21 @@ async def get_folders(notebook_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/doomscroll/folders/{folder_id}")
-async def delete_folder(folder_id: str):
+async def delete_folder(folder_id: str, current_user: TokenData = Depends(get_current_user)):
     """Delete a folder and move its cards to uncategorized"""
     try:
+        # Verify folder ownership through notebook
+        folder = await doomscroll_folders_collection.find_one({"_id": ObjectId(folder_id)})
+        if not folder:
+            raise HTTPException(status_code=404, detail="Folder not found")
+
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(folder["notebook_id"]),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=403, detail="Access denied")
+
         # Move all cards in this folder to uncategorized (folder_id = None)
         await saved_cards_collection.update_many(
             {"folder_id": folder_id},
@@ -3062,9 +3487,21 @@ async def delete_folder(folder_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.put("/doomscroll/card/{card_id}/folder")
-async def move_card_to_folder(card_id: str, request: DoomscrollMoveCardRequest):
+async def move_card_to_folder(card_id: str, request: DoomscrollMoveCardRequest, current_user: TokenData = Depends(get_current_user)):
     """Move a card to a folder"""
     try:
+        # Verify card ownership through notebook
+        card = await saved_cards_collection.find_one({"_id": ObjectId(card_id)})
+        if not card:
+            raise HTTPException(status_code=404, detail="Card not found")
+
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(card["notebook_id"]),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=403, detail="Access denied")
+
         # Update the card's folder_id
         result = await saved_cards_collection.update_one(
             {"_id": ObjectId(card_id)},
