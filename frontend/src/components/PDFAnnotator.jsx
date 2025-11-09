@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
-import { FiFileText, FiMessageSquare, FiX, FiLoader, FiChevronLeft, FiChevronRight, FiZoomIn, FiZoomOut, FiPlus } from 'react-icons/fi'
+import { FiFileText, FiMessageSquare, FiX, FiLoader, FiChevronLeft, FiChevronRight, FiZoomIn, FiZoomOut, FiPlus, FiZap } from 'react-icons/fi'
 import axios from 'axios'
 import { Document, Page, pdfjs } from 'react-pdf'
 import ReactMarkdown from 'react-markdown'
 import NotificationModal from './NotificationModal'
 import LoadingSpinner from './LoadingSpinner'
 import { useNotification } from '../hooks/useNotification'
+import StudyQuestions from './StudyQuestions'
 
 // Configure PDF.js worker - use local copy
 pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
@@ -41,6 +42,11 @@ function PDFAnnotator({ documents, notebookId, selectedDoc, setSelectedDoc }) {
   const [showAnnotationForm, setShowAnnotationForm] = useState(false)
   const [annotationNote, setAnnotationNote] = useState('')
   const [annotationColor, setAnnotationColor] = useState('#ffeb3b')
+  const [pageDimensions, setPageDimensions] = useState({ width: 612, height: 792 }) // Default Letter size
+
+  // AI Analysis state
+  const [showAnalyzer, setShowAnalyzer] = useState(false)
+  const [answerHighlight, setAnswerHighlight] = useState(null)
 
   const pageRef = useRef(null)
 
@@ -77,6 +83,13 @@ function PDFAnnotator({ documents, notebookId, selectedDoc, setSelectedDoc }) {
   const onDocumentLoadSuccess = ({ numPages }) => {
     setNumPages(numPages)
     setPageNumber(1)
+  }
+
+  const onPageLoadSuccess = (page) => {
+    setPageDimensions({
+      width: page.width,
+      height: page.height
+    })
   }
 
   const changePage = (offset) => {
@@ -173,6 +186,25 @@ function PDFAnnotator({ documents, notebookId, selectedDoc, setSelectedDoc }) {
         }
       }
     )
+  }
+
+  const handleAnswerHighlight = ({ text, page }) => {
+    // Navigate to the page with the answer
+    if (page) {
+      setPageNumber(page)
+    }
+
+    // Set temporary answer highlight
+    setAnswerHighlight({
+      text,
+      page,
+      timestamp: Date.now()
+    })
+
+    // Clear highlight after 5 seconds
+    setTimeout(() => {
+      setAnswerHighlight(null)
+    }, 5000)
   }
 
   const queryAnnotation = async () => {
@@ -282,12 +314,30 @@ function PDFAnnotator({ documents, notebookId, selectedDoc, setSelectedDoc }) {
 
       <div className="pdf-content-wrapper">
         <div className="pdf-sidebar">
-          <div className="annotation-help-banner">
-            <FiPlus size={16} />
-            <span>Select text in the PDF to create annotations</span>
+          {/* Sidebar Tabs */}
+          <div className="sidebar-tabs">
+            <button
+              className={`sidebar-tab ${!showAnalyzer ? 'active' : ''}`}
+              onClick={() => setShowAnalyzer(false)}
+            >
+              <FiFileText /> Annotations ({annotations.length})
+            </button>
+            <button
+              className={`sidebar-tab ${showAnalyzer ? 'active' : ''}`}
+              onClick={() => setShowAnalyzer(true)}
+            >
+              <FiZap /> AI Analyzer
+            </button>
           </div>
-          <h3>Annotations ({annotations.length})</h3>
-          <div className="annotations-list">
+
+          {/* Show either Annotations or Analyzer */}
+          {!showAnalyzer ? (
+            <>
+              <div className="annotation-help-banner">
+                <FiPlus size={16} />
+                <span>Select text in the PDF to create annotations</span>
+              </div>
+              <div className="annotations-list">
             {annotations.length === 0 ? (
               <p style={{ padding: '16px', color: 'var(--text-secondary)', fontSize: '13px' }}>
                 No annotations yet. Select text in the PDF to create annotations.
@@ -298,21 +348,26 @@ function PDFAnnotator({ documents, notebookId, selectedDoc, setSelectedDoc }) {
                   key={ann.id}
                   className="annotation-item"
                   style={{ borderLeftColor: ann.color || 'var(--accent-primary)' }}
-                  onClick={() => {
-                    if (ann.page_number !== pageNumber) {
-                      setPageNumber(ann.page_number)
-                    }
-                  }}
                 >
-                  <div className="annotation-page-badge">
-                    Page {ann.page_number}
+                  <div
+                    className="annotation-info"
+                    onClick={() => {
+                      if (ann.page_number !== pageNumber) {
+                        setPageNumber(ann.page_number)
+                      }
+                    }}
+                    style={{ cursor: 'pointer', flex: 1 }}
+                  >
+                    <div className="annotation-page-badge">
+                      Page {ann.page_number}
+                    </div>
+                    <div className="annotation-text">
+                      "{ann.highlighted_text.substring(0, 100)}..."
+                    </div>
+                    {ann.note && (
+                      <div className="annotation-note">{ann.note}</div>
+                    )}
                   </div>
-                  <div className="annotation-text">
-                    "{ann.highlighted_text.substring(0, 100)}..."
-                  </div>
-                  {ann.note && (
-                    <div className="annotation-note">{ann.note}</div>
-                  )}
                   <div className="annotation-actions">
                     <button onClick={(e) => { e.stopPropagation(); openQueryDialog(ann); }}>
                       <FiMessageSquare /> Ask AI
@@ -324,7 +379,15 @@ function PDFAnnotator({ documents, notebookId, selectedDoc, setSelectedDoc }) {
                 </div>
               ))
             )}
-          </div>
+              </div>
+            </>
+          ) : (
+            <StudyQuestions
+              notebookId={notebookId}
+              documentId={selectedDoc.id}
+              onHighlightAnswer={handleAnswerHighlight}
+            />
+          )}
         </div>
 
         <div className="pdf-viewer-container">
@@ -365,10 +428,11 @@ function PDFAnnotator({ documents, notebookId, selectedDoc, setSelectedDoc }) {
                     renderTextLayer={true}
                     renderAnnotationLayer={false}
                     onMouseUp={handleTextSelection}
+                    onLoadSuccess={onPageLoadSuccess}
                   />
                 </Document>
 
-                {/* Render highlights for current page - positioned relative to the page */}
+                {/* Render saved highlights for current page */}
                 {currentPageAnnotations.map((ann) => (
                   <div
                     key={ann.id}
@@ -390,6 +454,26 @@ function PDFAnnotator({ documents, notebookId, selectedDoc, setSelectedDoc }) {
                     title={ann.highlighted_text.substring(0, 100)}
                   />
                 ))}
+
+                {/* Render answer highlight when question is clicked */}
+                {answerHighlight && answerHighlight.page === pageNumber && (
+                  <div
+                    className="answer-highlight-overlay"
+                    style={{
+                      position: 'absolute',
+                      left: 0,
+                      top: 0,
+                      right: 0,
+                      bottom: 0,
+                      backgroundColor: '#FFD700',
+                      opacity: 0.2,
+                      pointerEvents: 'none',
+                      zIndex: 10,
+                      animation: 'pulse-highlight 1s ease-in-out infinite'
+                    }}
+                    title={`Answer: ${answerHighlight.text.substring(0, 100)}`}
+                  />
+                )}
               </div>
             )}
           </div>

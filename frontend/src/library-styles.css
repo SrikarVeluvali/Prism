@@ -84,13 +84,14 @@
   align-items: center;
   justify-content: space-between;
   padding: 6px 12px;
-  border-bottom: 1px solid rgba(99, 102, 241, 0.1);
   background: linear-gradient(135deg, rgba(99, 102, 241, 0.02) 0%, rgba(139, 92, 246, 0.02) 100%);
 }
 
 .library-title-section {
   display: flex;
   flex-direction: column;
+  padding-left: 50px;
+  padding-top: 12px;
   gap: 4px;
 }
 
