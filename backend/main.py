@@ -22,11 +22,13 @@ Project: PRISM
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, AsyncGenerator
 import os
+import hashlib
+import asyncio
 from dotenv import load_dotenv
 from groq import Groq
 from sentence_transformers import SentenceTransformer
@@ -63,6 +65,8 @@ from database import (
     interview_sessions_collection,
     saved_cards_collection,
     doomscroll_folders_collection,
+    analysis_cache_collection,
+    pdf_questions_collection,
     init_db
 )
 
@@ -329,6 +333,13 @@ class YouTubeURLSubmit(BaseModel):
     custom_title: Optional[str] = None
 
 
+# Document Analysis Models
+# =========================
+class DocumentAnalyzeRequest(BaseModel):
+    """Model for requesting document analysis"""
+    question_types: List[str] = ["2-marks", "5-marks", "10-marks"]  # Types of questions to generate
+
+
 # ==================== HELPER FUNCTIONS ====================
 
 def extract_text_from_pdf(pdf_file):
@@ -504,6 +515,190 @@ def notebook_helper(notebook) -> dict:
         "created_at": notebook["created_at"],
         "document_count": notebook.get("document_count", 0)
     }
+
+
+# ==================== PDF ANALYSIS HELPER FUNCTIONS ====================
+
+def extract_pdf_pages(pdf_path: str):
+    """
+    Extract text from PDF page by page.
+
+    Args:
+        pdf_path: Path to the PDF file
+
+    Yields:
+        Tuple[int, str]: (page_number, page_text) for each page
+    """
+    try:
+        with open(pdf_path, "rb") as pdf_file:
+            pdf_reader = PyPDF2.PdfReader(pdf_file)
+            total_pages = len(pdf_reader.pages)
+
+            for page_num in range(total_pages):
+                page = pdf_reader.pages[page_num]
+                page_text = page.extract_text() or ""
+
+                # Clean up text - remove excessive whitespace
+                page_text = " ".join(page_text.split())
+
+                # Limit to 2000 chars to minimize token usage
+                if len(page_text) > 2000:
+                    page_text = page_text[:2000]
+
+                yield (page_num + 1, page_text, total_pages)  # 1-indexed page numbers
+
+    except Exception as e:
+        print(f"Error extracting PDF pages: {e}")
+        raise
+
+
+def build_analysis_prompt(page_text: str, question_types: List[str] = None) -> str:
+    """
+    Build prompt for generating study questions from PDF content.
+
+    Args:
+        page_text: Text content of the page
+        question_types: List of question types to generate
+
+    Returns:
+        str: Formatted prompt for Groq API
+    """
+    question_types = question_types or ["2-marks", "5-marks", "10-marks"]
+
+    prompt = f"""Analyze this educational content and generate important exam questions.
+
+Generate questions that test understanding of this content:
+{"- 1 x 2-mark question (definition/recall based)" if "2-marks" in question_types else ""}
+{"- 1 x 5-mark question (explanation/application based)" if "5-marks" in question_types else ""}
+{"- 1 x 10-mark question (analysis/comprehensive)" if "10-marks" in question_types else ""}
+
+For each question provide:
+- type: Question mark type (2-marks, 5-marks, or 10-marks)
+- question: The actual question
+- answer: Brief answer (2-3 sentences for 2m, 4-5 sentences for 5m, paragraph for 10m)
+- answer_text_snippet: Exact text from content that contains the answer (for highlighting)
+
+Content:
+{page_text}
+
+Respond ONLY with valid JSON (no markdown, no code blocks):
+{{
+  "questions": [
+    {{
+      "type": "2-marks",
+      "question": "...",
+      "answer": "...",
+      "answer_text_snippet": "exact text from content containing the answer"
+    }}
+  ]
+}}"""
+
+    return prompt
+
+
+async def analyze_page_with_groq(page_text: str, question_types: List[str]) -> dict:
+    """
+    Analyze a single page using Groq API to generate study questions.
+
+    Args:
+        page_text: Text content of the page
+        question_types: List of question types to generate
+
+    Returns:
+        dict: Analysis result with questions
+    """
+    try:
+        prompt = build_analysis_prompt(page_text, question_types)
+
+        chat_completion = groq_client.chat.completions.create(
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an expert educational content analyzer. Always respond with valid JSON only."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            model="llama-3.3-70b-versatile",
+            temperature=0.3,
+            max_tokens=1500
+        )
+
+        response_text = chat_completion.choices[0].message.content.strip()
+
+        # Remove markdown code blocks if present
+        if response_text.startswith("```"):
+            response_text = response_text.split("```")[1]
+            if response_text.startswith("json"):
+                response_text = response_text[4:]
+            response_text = response_text.strip()
+
+        result = json.loads(response_text)
+        return result
+
+    except json.JSONDecodeError as e:
+        print(f"Error parsing JSON from Groq: {e}")
+        print(f"Response was: {response_text}")
+        return {"questions": []}
+    except Exception as e:
+        print(f"Error analyzing page with Groq: {e}")
+        return {"questions": []}
+
+
+async def get_cached_analysis(doc_id: str, page_number: int) -> Optional[dict]:
+    """
+    Retrieve cached analysis result.
+
+    Args:
+        doc_id: Document ID
+        page_number: Page number
+
+    Returns:
+        dict: Cached result or None
+    """
+    try:
+        query = {
+            "document_id": doc_id,
+            "page_number": page_number
+        }
+
+        cached = await analysis_cache_collection.find_one(query)
+        return cached.get("result") if cached else None
+
+    except Exception as e:
+        print(f"Error retrieving cached analysis: {e}")
+        return None
+
+
+async def cache_analysis(doc_id: str, page_number: int, result: dict):
+    """
+    Cache analysis result for future use.
+
+    Args:
+        doc_id: Document ID
+        page_number: Page number
+        result: Analysis result to cache
+    """
+    try:
+        cache_doc = {
+            "document_id": doc_id,
+            "page_number": page_number,
+            "result": result,
+            "created_at": datetime.now().isoformat()
+        }
+
+        await analysis_cache_collection.update_one(
+            {
+                "document_id": doc_id,
+                "page_number": page_number
+            },
+            {"$set": cache_doc},
+            upsert=True
+        )
+    except Exception as e:
+        print(f"Error caching analysis: {e}")
 
 
 # ==================== API ENDPOINTS ====================
@@ -1353,6 +1548,138 @@ async def delete_document(doc_id: str, current_user: TokenData = Depends(get_cur
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/documents/{notebook_id}/{doc_id}/analyze")
+async def analyze_document(
+    notebook_id: str,
+    doc_id: str,
+    request: DocumentAnalyzeRequest,
+    current_user: TokenData = Depends(get_current_user)
+):
+    """
+    Analyze a PDF document to generate study questions.
+    Returns all questions after processing the entire document.
+    """
+    try:
+        # Verify notebook ownership
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(notebook_id),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
+        # Find the document
+        doc = await documents_collection.find_one({
+            "doc_id": doc_id,
+            "notebook_id": notebook_id
+        })
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        # Only support PDF for now
+        if doc.get("file_type") != "pdf":
+            raise HTTPException(status_code=400, detail="Only PDF documents are supported for analysis")
+
+        # Get PDF file path
+        if "file_path" in doc:
+            pdf_path = Path(doc["file_path"])
+        else:
+            pdf_path = UPLOADS_DIR / notebook_id / f"{doc_id}.pdf"
+
+        if not pdf_path.exists():
+            raise HTTPException(status_code=404, detail="PDF file not found on disk")
+
+        all_questions = []
+
+        # Process each page
+        for page_num, page_text, total_pages in extract_pdf_pages(str(pdf_path)):
+            # Check cache first
+            cached_result = await get_cached_analysis(doc_id, page_num)
+
+            if cached_result:
+                result = cached_result
+            else:
+                # Analyze with Groq
+                result = await analyze_page_with_groq(page_text, request.question_types)
+
+                # Cache the result
+                await cache_analysis(doc_id, page_num, result)
+
+            # Add questions from this page
+            for q in result.get("questions", []):
+                question_doc = {
+                    "notebook_id": notebook_id,
+                    "document_id": doc_id,
+                    "type": q.get("type", "2-marks"),
+                    "question": q.get("question", ""),
+                    "answer": q.get("answer", ""),
+                    "answer_text_snippet": q.get("answer_text_snippet", ""),
+                    "page": page_num,
+                    "created_at": datetime.now().isoformat()
+                }
+
+                # Save to database
+                question_result = await pdf_questions_collection.insert_one(question_doc)
+
+                # Add to response with ID
+                all_questions.append({
+                    "id": str(question_result.inserted_id),
+                    "type": question_doc["type"],
+                    "question": question_doc["question"],
+                    "answer": question_doc["answer"],
+                    "answer_text_snippet": question_doc["answer_text_snippet"],
+                    "page": question_doc["page"]
+                })
+
+        return {
+            "status": "success",
+            "total_pages": total_pages,
+            "questions": all_questions
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error in analyze_document: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/pdf-questions/{notebook_id}")
+async def get_pdf_questions(notebook_id: str, doc_id: Optional[str] = None, current_user: TokenData = Depends(get_current_user)):
+    """Get generated questions for a notebook or specific document."""
+    try:
+        # Verify notebook ownership
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(notebook_id),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
+        query = {"notebook_id": notebook_id}
+        if doc_id:
+            query["document_id"] = doc_id
+
+        questions = []
+        async for q in pdf_questions_collection.find(query).sort("created_at", -1):
+            question = {
+                "id": str(q["_id"]),
+                "document_id": q.get("document_id"),
+                "page_number": q.get("page_number"),
+                "question_type": q.get("question_type"),
+                "question": q.get("question"),
+                "answer": q.get("answer"),
+                "created_at": q.get("created_at")
+            }
+            questions.append(question)
+
+        return {"questions": questions}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/ask")
 async def ask_question(request: QuestionRequest, current_user: TokenData = Depends(get_current_user)):
@@ -2508,7 +2835,7 @@ async def get_annotations(notebook_id: str, document_id: Optional[str] = None, c
         async for ann in annotations_collection.find(filter_dict).sort("created_at", -1):
             # Build base annotation object
             annotation_obj = {
-                "_id": str(ann["_id"]),
+                "id": str(ann["_id"]),
                 "document_id": ann["document_id"],
                 "annotation_type": ann.get("annotation_type", "highlight"),
                 "color": ann.get("color", "#ffeb3b"),

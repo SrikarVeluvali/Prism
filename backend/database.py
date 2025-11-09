@@ -77,6 +77,12 @@ saved_cards_collection = async_db["saved_cards"]
 # Doomscroll Folders: Store organization folders for saved learning cards
 doomscroll_folders_collection = async_db["doomscroll_folders"]
 
+# Analysis Cache: Store cached PDF/document analysis results for cost optimization
+analysis_cache_collection = async_db["analysis_cache"]
+
+# PDF Questions: Store generated questions from PDF analysis with mark types
+pdf_questions_collection = async_db["pdf_questions"]
+
 # Database Initialization
 # =======================
 
@@ -140,6 +146,18 @@ def init_db():
         # Doomscroll folders indexes
         sync_db["doomscroll_folders"].create_index("notebook_id")
         sync_db["doomscroll_folders"].create_index("created_at")
+
+        # Analysis cache indexes
+        sync_db["analysis_cache"].create_index("document_id")
+        sync_db["analysis_cache"].create_index([("document_id", 1), ("page_number", 1)])
+        sync_db["analysis_cache"].create_index([("document_id", 1), ("custom_prompt_hash", 1)])
+        sync_db["analysis_cache"].create_index("created_at", expireAfterSeconds=2592000)  # 30 days TTL
+
+        # PDF questions indexes
+        sync_db["pdf_questions"].create_index("document_id")
+        sync_db["pdf_questions"].create_index("notebook_id")
+        sync_db["pdf_questions"].create_index([("document_id", 1), ("page_number", 1)])
+        sync_db["pdf_questions"].create_index("created_at")
 
         print("Database indexes initialized successfully")
     except Exception as e:
