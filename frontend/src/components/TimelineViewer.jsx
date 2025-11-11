@@ -46,54 +46,78 @@ const TimelineViewer = ({ content }) => {
 // Parse text-based timeline
 const parseTextTimeline = (text) => {
   const events = [];
-  const lines = text.split('\n').filter((l) => l.trim());
 
-  let currentEvent = null;
+  // Split by double newlines to get event blocks
+  const blocks = text.split(/\n\s*\n/).filter((b) => b.trim());
 
-  lines.forEach((line) => {
-    const trimmed = line.trim();
+  blocks.forEach((block) => {
+    const lines = block.split('\n').filter((l) => l.trim());
 
-    // Look for date patterns (YYYY, MM/DD/YYYY, etc.)
-    const dateMatch = trimmed.match(/^(\d{4}|\d{1,2}\/\d{1,2}\/\d{2,4}|[A-Z][a-z]+\s+\d{1,2},?\s+\d{4})/);
+    if (lines.length === 0) return;
 
-    if (dateMatch) {
-      // New event with date
-      if (currentEvent) {
-        events.push(currentEvent);
-      }
-      currentEvent = {
-        date: dateMatch[1],
-        title: trimmed.replace(dateMatch[0], '').replace(/^[\s:-]+/, ''),
-        description: '',
-      };
-    } else if (currentEvent) {
-      // Add to description
-      if (currentEvent.title && !currentEvent.description) {
-        currentEvent.description = trimmed;
-      } else if (currentEvent.description) {
-        currentEvent.description += ' ' + trimmed;
+    let date = '';
+    let title = '';
+    let description = '';
+
+    // Look for the backend format: [Date/Year]: [Event Title]
+    const backendFormat = lines[0].match(/^\[([^\]]+)\]:\s*(.+)/);
+
+    if (backendFormat) {
+      // Backend format: [Date]: Title
+      date = backendFormat[1];
+      title = backendFormat[2];
+      // Rest of the lines are description
+      description = lines.slice(1).join(' ').trim();
+    } else {
+      // Try other formats
+      // Look for date patterns at the start
+      const dateMatch = lines[0].match(/^(\d{4}|\d{1,2}\/\d{1,2}\/\d{2,4}|[A-Z][a-z]+\s+\d{1,2},?\s+\d{4}|\d{1,2}\s+[A-Z][a-z]+\s+\d{4})/);
+
+      if (dateMatch) {
+        date = dateMatch[1];
+        title = lines[0].replace(dateMatch[0], '').replace(/^[\s:-]+/, '').trim();
+        description = lines.slice(1).join(' ').trim();
       } else {
-        currentEvent.title += ' ' + trimmed;
+        // No clear date, use first line as title
+        title = lines[0];
+        description = lines.slice(1).join(' ').trim();
+        date = 'Date Unknown';
       }
+    }
+
+    if (title) {
+      events.push({
+        date: date || 'Unknown',
+        title: title,
+        description: description,
+      });
     }
   });
 
-  // Add last event
-  if (currentEvent) {
-    events.push(currentEvent);
-  }
-
-  // If no events with dates, try bullet point format
+  // If no events found, try bullet point format
   if (events.length === 0) {
+    const lines = text.split('\n').filter((l) => l.trim());
     let currentDate = '';
+
     lines.forEach((line) => {
       const trimmed = line.trim();
+
+      // Check for heading as date
       if (trimmed.match(/^#+\s*/)) {
-        // Heading as date
         currentDate = trimmed.replace(/^#+\s*/, '');
-      } else if (trimmed.match(/^[-*•]\s*/)) {
-        // Bullet point as event
+      }
+      // Check for bullet points
+      else if (trimmed.match(/^[-*•]\s*/)) {
         const text = trimmed.replace(/^[-*•]\s*/, '');
+        events.push({
+          date: currentDate || 'Unknown',
+          title: text,
+          description: '',
+        });
+      }
+      // Check for numbered list
+      else if (trimmed.match(/^\d+\.\s*/)) {
+        const text = trimmed.replace(/^\d+\.\s*/, '');
         events.push({
           date: currentDate || 'Unknown',
           title: text,

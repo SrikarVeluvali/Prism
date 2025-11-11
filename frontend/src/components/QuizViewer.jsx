@@ -13,7 +13,14 @@ const QuizViewer = ({ content }) => {
   const questions = useMemo(() => {
     try {
       const data = JSON.parse(content);
-      return Array.isArray(data) ? data : [];
+      if (Array.isArray(data)) {
+        // Normalize field names: convert correct_answer to correctAnswer
+        return data.map(q => ({
+          ...q,
+          correctAnswer: q.correctAnswer ?? q.correct_answer ?? 0
+        }));
+      }
+      return [];
     } catch {
       return parseTextQuiz(content);
     }
@@ -165,9 +172,20 @@ const QuizViewer = ({ content }) => {
 // Parse text-based quiz
 const parseTextQuiz = (text) => {
   const questions = [];
-  const sections = text.split(/\n\s*\n/);
 
-  sections.forEach((section) => {
+  // Try splitting by different patterns to find questions
+  // Pattern 1: Split by question numbers (1. 2. 3. etc)
+  let sections = text.split(/(?=^\d+\.)/m);
+
+  // If that doesn't work, try splitting by double newlines
+  if (sections.length === 1) {
+    sections = text.split(/\n\s*\n/);
+  }
+
+  console.log('Parsing quiz with', sections.length, 'sections');
+  console.log('Raw text:', text);
+
+  sections.forEach((section, sectionIndex) => {
     const lines = section.split('\n').filter((l) => l.trim());
     if (lines.length < 2) return;
 
@@ -176,38 +194,59 @@ const parseTextQuiz = (text) => {
     let correctAnswer = -1;
     let explanation = '';
 
+    console.log(`Section ${sectionIndex}:`, lines);
+
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
 
-      // Question line
-      if (line.match(/^\d+\.|^Q\d*:|^Question/i)) {
-        question = line.replace(/^\d+\.|^Q\d*:|^Question\s*\d*:?\s*/i, '');
+      // Question line - more flexible patterns
+      if (line.match(/^\*?\*?Question\s*\d*[\*\:]|\*?\d+\.|^Q\d*:/i)) {
+        question = line.replace(/^\*?\*?Question\s*\d*[\*\:]\s*|\*?\d+\.\s*|^Q\d*:\s*/i, '').trim();
+        console.log('Found question:', question);
       }
-      // Options (A, B, C, D or a, b, c, d)
-      else if (line.match(/^[a-dA-D][\)\.]\s*/)) {
-        const optionText = line.replace(/^[a-dA-D][\)\.]\s*/, '');
-        // Check if this is the correct answer (marked with * or ✓)
-        if (optionText.match(/^\*|^✓|^\[correct\]/i)) {
-          correctAnswer = options.length;
-          options.push(optionText.replace(/^\*|^✓|^\[correct\]\s*/i, ''));
+      // Options (A, B, C, D or a, b, c, d) - handle markdown bold
+      else if (line.match(/^\*?[a-dA-D][\)\.\:]|\*?\([a-dA-D]\)/)) {
+        const optionText = line.replace(/^\*?[a-dA-D][\)\.\:]\s*|\*?\([a-dA-D]\)\s*/,'').trim();
+        options.push(optionText);
+        console.log('Found option', String.fromCharCode(65 + options.length - 1) + ':', optionText);
+      }
+      // Correct answer marker - very flexible pattern
+      else if (line.match(/^\*{0,2}(Answer|Correct(\s+Answer)?)\*{0,2}[\s:\*]/i)) {
+        // Remove markdown formatting and label
+        const answerText = line
+          .replace(/^\*{0,2}(Answer|Correct(\s+Answer)?)\*{0,2}[\s:\*]+/i, '')
+          .replace(/\*\*/g, '')
+          .trim();
+
+        console.log('Found answer line:', line, '→ extracted text:', answerText);
+
+        // Try to extract the letter
+        const letterMatch = answerText.match(/\b[A-D]\b/i);
+
+        if (letterMatch) {
+          const answerLetter = letterMatch[0].toUpperCase();
+          correctAnswer = answerLetter.charCodeAt(0) - 65; // A=0, B=1, etc.
+          console.log('✓ Parsed correct answer:', answerLetter, '→ index:', correctAnswer);
         } else {
-          options.push(optionText);
+          console.warn('✗ Could not extract letter from answer text:', answerText);
         }
       }
-      // Correct answer marker
-      else if (line.match(/^(Answer|Correct):/i)) {
-        const answerLetter = line.replace(/^(Answer|Correct):\s*/i, '').charAt(0).toUpperCase();
-        correctAnswer = answerLetter.charCodeAt(0) - 65; // A=0, B=1, etc.
-      }
-      // Explanation
-      else if (line.match(/^Explanation:/i)) {
-        explanation = line.replace(/^Explanation:\s*/i, '');
+      // Explanation - handle markdown
+      else if (line.match(/^\*{0,2}Explanation\*{0,2}:/i)) {
+        explanation = line.replace(/^\*{0,2}Explanation\*{0,2}:\s*/i, '').trim();
+        console.log('Found explanation:', explanation);
       }
     }
 
     if (question && options.length >= 2) {
       // If no correct answer was marked, default to first option
-      if (correctAnswer === -1) correctAnswer = 0;
+      if (correctAnswer === -1) {
+        console.warn('⚠ No correct answer found for question:', question);
+        console.warn('Full section text:', section);
+        correctAnswer = 0;
+      } else {
+        console.log('✓ Question complete with correct answer index:', correctAnswer);
+      }
 
       questions.push({
         question,

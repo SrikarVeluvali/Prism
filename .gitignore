@@ -132,3 +132,5 @@ coverage/
 # pyenv
 .python-version
 
+.claude
+CLAUDE.md

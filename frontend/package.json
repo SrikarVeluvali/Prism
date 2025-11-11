@@ -28,6 +28,7 @@
     "file-saver": "^2.0.5",
     "html2canvas": "^1.4.1",
     "jspdf": "^3.0.3",
+    "mammoth": "^1.7.2",
     "pdfjs-dist": "^5.4.296",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
@@ -38,7 +39,7 @@
     "react-player": "^2.16.0",
     "reactflow": "^11.11.4",
     "rehype-raw": "^7.0.0",
-    "mammoth": "^1.7.2"
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@types/react": "^18.2.43",

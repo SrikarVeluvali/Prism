@@ -38,6 +38,7 @@ function Doomscroll({ documents, notebookId }) {
     itemName: '',
     isDeleting: false
   })
+  const [viewingCard, setViewingCard] = useState(null)
 
   const containerRef = useRef(null)
   const isGeneratingRef = useRef(false)
@@ -406,22 +407,28 @@ function Doomscroll({ documents, notebookId }) {
           <div
             key={card.id}
             className="doomscroll-card"
-            style={{ background: card.color.bg }}
           >
+            <div className="doomscroll-card-gradient"></div>
+
             <div className="doomscroll-card-content">
-              <div className="doomscroll-card-type">
-                <span className="type-icon">{getCardIcon(card.type)}</span>
-                <span className="type-label">{getCardTypeLabel(card.type)}</span>
+              <div className="doomscroll-card-header">
+                <div className="card-type-badge">
+                  <span className="badge-icon">{getCardIcon(card.type)}</span>
+                  <span className="badge-text">{getCardTypeLabel(card.type)}</span>
+                </div>
               </div>
 
-              <h3 className="doomscroll-card-title">{card.title}</h3>
-              <p className="doomscroll-card-text">{card.content}</p>
+              <div className="doomscroll-card-body">
+                <h2 className="doomscroll-card-title">{card.title}</h2>
+                <div className="doomscroll-card-text">{card.content}</div>
 
-              {card.example && (
-                <div className="doomscroll-card-example">
-                  <strong>Example:</strong> {card.example}
-                </div>
-              )}
+                {card.example && (
+                  <div className="doomscroll-card-example">
+                    <div className="example-label">Example</div>
+                    <div className="example-content">{card.example}</div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         ))}
@@ -516,21 +523,32 @@ function Doomscroll({ documents, notebookId }) {
                       className="saved-card-item"
                       style={{ background: card.color }}
                     >
-                      <div className="saved-card-type">
-                        {getCardIcon(card.type)} {getCardTypeLabel(card.type)}
+                      <div
+                        className="saved-card-clickable"
+                        onClick={() => setViewingCard(card)}
+                      >
+                        <div className="saved-card-type">
+                          {getCardIcon(card.type)} {getCardTypeLabel(card.type)}
+                        </div>
+                        <h4>{card.title}</h4>
+                        <p>{card.content.substring(0, 100)}{card.content.length > 100 ? '...' : ''}</p>
                       </div>
-                      <h4>{card.title}</h4>
-                      <p>{card.content.substring(0, 100)}...</p>
                       <div className="saved-card-actions">
                         <button
                           className="organize-btn"
-                          onClick={() => setCardToOrganize(card)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setCardToOrganize(card);
+                          }}
                         >
                           <FiFolder size={14} /> Organize
                         </button>
                         <button
                           className="delete-btn"
-                          onClick={() => handleDeleteCard(card.card_id, card.title)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteCard(card.card_id, card.title);
+                          }}
                         >
                           <FiTrash2 size={14} />
                         </button>
@@ -698,6 +716,60 @@ function Doomscroll({ documents, notebookId }) {
                 ) : (
                   'Delete'
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View Card Full Content Modal */}
+      {viewingCard && (
+        <div className="modal-overlay" onClick={() => setViewingCard(null)}>
+          <div className="modal card-viewer-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>
+                <span className="card-viewer-icon">{getCardIcon(viewingCard.type)}</span>
+                {getCardTypeLabel(viewingCard.type)}
+              </h2>
+              <button onClick={() => setViewingCard(null)} className="close-button">
+                <FiX size={20} />
+              </button>
+            </div>
+
+            <div className="modal-body card-viewer-body">
+              <div
+                className="card-viewer-content"
+                style={{ background: viewingCard.color }}
+              >
+                <h3 className="card-viewer-title">{viewingCard.title}</h3>
+                <p className="card-viewer-text">{viewingCard.content}</p>
+
+                {viewingCard.example && (
+                  <div className="card-viewer-example">
+                    <strong>Example:</strong> {viewingCard.example}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button
+                className="organize-btn"
+                onClick={() => {
+                  setCardToOrganize(viewingCard);
+                  setViewingCard(null);
+                }}
+              >
+                <FiFolder size={14} /> Organize
+              </button>
+              <button
+                className="delete-btn"
+                onClick={() => {
+                  handleDeleteCard(viewingCard.card_id, viewingCard.title);
+                  setViewingCard(null);
+                }}
+              >
+                <FiTrash2 size={14} /> Delete
               </button>
             </div>
           </div>

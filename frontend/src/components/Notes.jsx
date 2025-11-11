@@ -24,11 +24,13 @@ import MindMapViewer from './MindMapViewer';
 import FlashcardsViewer from './FlashcardsViewer';
 import QuizViewer from './QuizViewer';
 import TimelineViewer from './TimelineViewer';
+import ComparisonTableViewer from './ComparisonTableViewer';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { saveAs } from 'file-saver';
 import ReactMarkdown from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
+import remarkGfm from 'remark-gfm';
 const API_URL = 'http://localhost:8000';
 
 const NOTE_COLORS = [
@@ -561,6 +563,13 @@ function Notes({ documents, selectedDocIds, notebookId }) {
           <TimelineViewer content={content} />
         );
 
+      case 'comparison_table':
+        return isPreview ? (
+          <div className="note-preview">Comparison Table (click to view)</div>
+        ) : (
+          <ComparisonTableViewer content={content} />
+        );
+
       case 'drawing':
         return <img src={content} alt="Drawing" className="note-drawing" />;
 
@@ -573,10 +582,13 @@ function Notes({ documents, selectedDocIds, notebookId }) {
             }}
           />
         ) : (
-          <div
-            className="note-rich-content"
-            dangerouslySetInnerHTML={{ __html: content }}
-          />
+          <div className="note-rich-content">
+            <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+                    rehypePlugins={[rehypeRaw]}>
+              {content}
+            </ReactMarkdown>
+          </div>
         );
 
       case 'text':
@@ -587,7 +599,7 @@ function Notes({ documents, selectedDocIds, notebookId }) {
           </div>
         ) : (
           <div className="note-rich-content">
-            <ReactMarkdown rehypePlugins={[rehypeRaw]}>
+            <ReactMarkdown>
               {content}
             </ReactMarkdown>
           </div>
@@ -611,6 +623,7 @@ function Notes({ documents, selectedDocIds, notebookId }) {
       ai_flashcards: 'Flashcards',
       ai_quiz: 'Quiz',
       ai_timeline: 'Timeline',
+      comparison_table: 'Comparison Table',
     };
     return labels[noteType] || noteType;
   };
@@ -1072,7 +1085,9 @@ function Notes({ documents, selectedDocIds, notebookId }) {
                 </div>
               )}
 
-              <div className="note-view-content">{renderNoteContent(viewingNote, false)}</div>
+              <div className="note-view-content">
+              {renderNoteContent(viewingNote, false)}
+              </div>
 
               <div className="note-view-meta">
                 <span>Created: {new Date(viewingNote.created_at).toLocaleString()}</span>
