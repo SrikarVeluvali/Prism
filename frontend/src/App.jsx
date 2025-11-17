@@ -9,6 +9,7 @@
  * - PDF: PDF viewing and annotation
  * - Interview: Virtual interview practice
  * - Doomscroll: Swipeable learning cards
+ * - Progress: Track learning progress and performance metrics
  *
  * State Management:
  * - Uses NotebookContext for global notebook state
@@ -18,7 +19,7 @@
  */
 
 import { useState, useRef, useEffect } from 'react'
-import { FiUpload, FiSend, FiTrash2, FiFile, FiMessageSquare, FiAward, FiFileText, FiArrowLeft, FiEdit3, FiEye, FiMic, FiTrendingUp, FiAlertTriangle, FiCheck, FiLogOut } from 'react-icons/fi'
+import { FiUpload, FiSend, FiTrash2, FiFile, FiMessageSquare, FiAward, FiFileText, FiArrowLeft, FiEdit3, FiEye, FiMic, FiTrendingUp, FiAlertTriangle, FiCheck, FiLogOut, FiBarChart2 } from 'react-icons/fi'
 import axios from 'axios'
 import FileUploadModal from './components/FileUploadModal'
 import Quiz from './components/Quiz'
@@ -27,6 +28,7 @@ import Notes from './components/Notes'
 import DocumentViewer from './components/DocumentViewer'
 import VirtualInterview from './components/VirtualInterview'
 import Doomscroll from './components/Doomscroll'
+import Progress from './components/Progress'
 import Library from './components/Library'
 import Auth from './components/Auth'
 import Navbar from './components/Navbar'
@@ -46,10 +48,11 @@ const API_URL = 'http://localhost:8000'
 function AppContent() {
   const { user, loading, isAuthenticated, login, logout } = useAuth()
   const { selectedNotebook, selectNotebook, clearNotebook } = useNotebook()
-  const [mode, setMode] = useState('chat') // 'chat', 'assessment', 'notes', 'pdf', 'interview', 'doomscroll'
+  const [mode, setMode] = useState('chat') // 'chat', 'assessment', 'notes', 'pdf', 'interview', 'doomscroll', 'progress'
   const [assessmentType, setAssessmentType] = useState(null) // 'quiz' or 'mocktest'
   const [documents, setDocuments] = useState([])
   const [selectedDocIds, setSelectedDocIds] = useState([])
+  const [documentProgress, setDocumentProgress] = useState({})
   const [messages, setMessages] = useState([])
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -100,6 +103,10 @@ function AppContent() {
     }
   }, [inputValue])
 
+  useEffect(() => {
+    fetchReadingProgress()
+  }, [documents, selectedNotebook])
+
   const fetchDocuments = async () => {
     if (!selectedNotebook) return
 
@@ -108,6 +115,34 @@ function AppContent() {
       setDocuments(response.data.documents)
     } catch (error) {
       console.error('Error fetching documents:', error)
+    }
+  }
+
+  const fetchReadingProgress = async () => {
+    if (!selectedNotebook || documents.length === 0) return
+
+    try {
+      const token = localStorage.getItem('token')
+      const progressMap = {}
+
+      for (const doc of documents) {
+        try {
+          const response = await axios.get(
+            `${API_URL}/reading-progress/${selectedNotebook.id}/${doc.id}`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          )
+          if (response.data.has_progress) {
+            progressMap[doc.id] = response.data
+          }
+        } catch (error) {
+          // Document has no progress yet, skip
+          console.log(`No progress for document ${doc.id}`)
+        }
+      }
+
+      setDocumentProgress(progressMap)
+    } catch (error) {
+      console.error('Error fetching reading progress:', error)
     }
   }
 
@@ -405,6 +440,16 @@ function AppContent() {
             <FiTrendingUp />
             Scroll
           </button>
+          <button
+            className={`mode-button ${mode === 'progress' ? 'active' : ''}`}
+            onClick={() => {
+              setMode('progress')
+              setAssessmentType(null)
+            }}
+          >
+            <FiBarChart2 />
+            Progress
+          </button>
         </div>
 
         <div className="upload-section">
@@ -421,34 +466,54 @@ function AppContent() {
               No documents uploaded yet
             </p>
           ) : (
-            documents.map(doc => (
-              <div
-                key={doc.id}
-                className={`document-item ${selectedDocIds.includes(doc.id) ? 'selected' : ''}`}
-                onClick={() => toggleDocumentSelection(doc.id)}
-              >
-                <div className="document-name">
-                  {selectedDocIds.includes(doc.id) ? (
-                    <FiCheck style={{ display: 'inline', marginRight: '6px', color: 'var(--accent-primary)' }} />
-                  ) : (
-                    <FiFile style={{ display: 'inline', marginRight: '6px', color: 'var(--text-secondary)' }} />
+            documents.map(doc => {
+              const progress = documentProgress[doc.id]
+              const hasProgress = progress && progress.completion_percentage > 0
+
+              return (
+                <div
+                  key={doc.id}
+                  className={`document-item ${selectedDocIds.includes(doc.id) ? 'selected' : ''}`}
+                  onClick={() => toggleDocumentSelection(doc.id)}
+                >
+                  <div className="document-name">
+                    {selectedDocIds.includes(doc.id) ? (
+                      <FiCheck style={{ display: 'inline', marginRight: '6px', color: 'var(--accent-primary)' }} />
+                    ) : (
+                      <FiFile style={{ display: 'inline', marginRight: '6px', color: 'var(--text-secondary)' }} />
+                    )}
+                    {doc.filename}
+                  </div>
+
+                  {hasProgress && (
+                    <div className="document-progress-info">
+                      <div className="document-progress-bar">
+                        <div
+                          className="document-progress-fill"
+                          style={{ width: `${progress.completion_percentage}%` }}
+                        />
+                      </div>
+                      <div className="document-progress-text">
+                        Page {progress.current_page}/{progress.total_pages} ({progress.completion_percentage.toFixed(0)}%)
+                      </div>
+                    </div>
                   )}
-                  {doc.filename}
+
+                  <div className="document-info">
+                    <span>{doc.chunks_count} chunks</span>
+                    <button
+                      className="delete-button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleDeleteDocument(doc.id, doc.filename)
+                      }}
+                    >
+                      <FiTrash2 size={14} />
+                    </button>
+                  </div>
                 </div>
-                <div className="document-info">
-                  <span>{doc.chunks_count} chunks</span>
-                  <button
-                    className="delete-button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      handleDeleteDocument(doc.id, doc.filename)
-                    }}
-                  >
-                    <FiTrash2 size={14} />
-                  </button>
-                </div>
-              </div>
-            ))
+              )
+            })
           )}
         </div>
 
@@ -606,6 +671,8 @@ function AppContent() {
           <VirtualInterview documents={documents} selectedDocIds={selectedDocIds} notebookId={selectedNotebook.id} />
         ) : mode === 'doomscroll' ? (
           <Doomscroll documents={documents} notebookId={selectedNotebook.id} />
+        ) : mode === 'progress' ? (
+          <Progress notebookId={selectedNotebook.id} />
         ) : null}
       </div>
       </div>

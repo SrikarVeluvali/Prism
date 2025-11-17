@@ -24,6 +24,27 @@ class PDFProcessor(BaseProcessor):
                 text += page_text + "\n"
         return text.strip()
 
+    def extract_text_with_pages(self, file_path_or_content: Any):
+        """
+        Extract text from PDF page-by-page for page-based chunking.
+
+        Args:
+            file_path_or_content: File-like object or path to PDF
+
+        Returns:
+            List of tuples: [(page_number, page_text), ...]
+            page_number is 1-indexed
+        """
+        pdf_reader = PyPDF2.PdfReader(file_path_or_content)
+        pages_data = []
+
+        for page_num, page in enumerate(pdf_reader.pages, start=1):
+            page_text = page.extract_text()
+            if page_text and page_text.strip():
+                pages_data.append((page_num, page_text.strip()))
+
+        return pages_data
+
     def get_file_type(self) -> str:
         """Get the file type this processor handles"""
         return "pdf"

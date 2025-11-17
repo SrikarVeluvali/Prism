@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { FiLoader, FiCheckCircle, FiCode, FiFileText, FiList, FiRefreshCw } from 'react-icons/fi'
 import axios from 'axios'
 import ReactMarkdown from 'react-markdown';
@@ -18,10 +18,40 @@ function MockTest({ documents, selectedDocIds, notebookId }) {
   const [numReorder, setNumReorder] = useState(2)
   const [difficulty, setDifficulty] = useState('medium')
   const [programmingLanguage, setProgrammingLanguage] = useState('python')
+  const [useReadProgress, setUseReadProgress] = useState(false) // Limit to read pages (default: disabled)
+  const [readingProgress, setReadingProgress] = useState({})
 
   // Drag state
   const [draggedItem, setDraggedItem] = useState(null)
   const [draggedIndex, setDraggedIndex] = useState(null)
+
+  // Fetch reading progress for selected documents
+  useEffect(() => {
+    const fetchReadingProgress = async () => {
+      if (selectedDocIds.length > 0 && useReadProgress) {
+        try {
+          const token = localStorage.getItem('token')
+          const progressData = {}
+
+          for (const docId of selectedDocIds) {
+            const response = await axios.get(
+              `${API_URL}/reading-progress/${notebookId}/${docId}`,
+              { headers: { Authorization: `Bearer ${token}` } }
+            )
+            if (response.data.has_progress && response.data.completed_pages) {
+              progressData[docId] = response.data.completed_pages
+            }
+          }
+
+          setReadingProgress(progressData)
+        } catch (error) {
+          console.error('Error fetching reading progress:', error)
+        }
+      }
+    }
+
+    fetchReadingProgress()
+  }, [selectedDocIds, useReadProgress, notebookId])
 
   const generateTest = async () => {
     if (documents.length === 0) {
@@ -29,9 +59,20 @@ function MockTest({ documents, selectedDocIds, notebookId }) {
       return
     }
 
+    // Collect completed pages if useReadProgress is enabled
+    let pageNumbers = null
+    if (useReadProgress && Object.keys(readingProgress).length > 0) {
+      pageNumbers = Object.values(readingProgress).flat()
+
+      if (pageNumbers.length === 0) {
+        alert('You haven\'t read any pages yet. Disable "Limit to pages I\'ve read" or read some content first.')
+        return
+      }
+    }
+
     setTestState('loading')
     try {
-      const response = await axios.post(`${API_URL}/generate-mock-test`, {
+      const requestData = {
         notebook_id: notebookId,
         document_ids: selectedDocIds.length > 0 ? selectedDocIds : null,
         num_theory: numTheory,
@@ -39,7 +80,14 @@ function MockTest({ documents, selectedDocIds, notebookId }) {
         num_reorder: numReorder,
         difficulty: difficulty,
         programming_language: programmingLanguage
-      })
+      }
+
+      // Add page_numbers if limiting to read pages
+      if (pageNumbers && pageNumbers.length > 0) {
+        requestData.page_numbers = pageNumbers
+      }
+
+      const response = await axios.post(`${API_URL}/generate-mock-test`, requestData)
 
       setTest(response.data)
 
@@ -220,6 +268,28 @@ function MockTest({ documents, selectedDocIds, notebookId }) {
                 <option value="medium">Medium</option>
                 <option value="hard">Hard</option>
               </select>
+            </div>
+
+            <div className="config-group" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '8px' }}>
+              <label style={{ marginBottom: 0, cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                <input
+                  type="checkbox"
+                  checked={useReadProgress}
+                  onChange={(e) => setUseReadProgress(e.target.checked)}
+                  style={{ marginRight: '8px' }}
+                />
+                Limit to pages I've read
+              </label>
+              {useReadProgress && Object.keys(readingProgress).length > 0 && (
+                <span style={{ fontSize: '12px', color: 'var(--accent-primary)', marginLeft: '26px' }}>
+                  ✓ {Object.values(readingProgress).flat().length} pages available
+                </span>
+              )}
+              {useReadProgress && Object.keys(readingProgress).length === 0 && (
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)', marginLeft: '26px' }}>
+                  No reading progress yet. Open a PDF in View section to start tracking.
+                </span>
+              )}
             </div>
           </div>
 

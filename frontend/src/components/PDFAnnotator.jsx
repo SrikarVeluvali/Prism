@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { FiFileText, FiMessageSquare, FiX, FiLoader, FiChevronLeft, FiChevronRight, FiZoomIn, FiZoomOut, FiPlus, FiZap } from 'react-icons/fi'
+import { FiFileText, FiMessageSquare, FiX, FiLoader, FiChevronLeft, FiChevronRight, FiZoomIn, FiZoomOut, FiPlus, FiZap, FiBookmark, FiBook, FiClock, FiCheck } from 'react-icons/fi'
 import axios from 'axios'
 import { Document, Page, pdfjs } from 'react-pdf'
 import ReactMarkdown from 'react-markdown'
@@ -48,7 +48,21 @@ function PDFAnnotator({ documents, notebookId, selectedDoc, setSelectedDoc }) {
   const [showAnalyzer, setShowAnalyzer] = useState(false)
   const [answerHighlight, setAnswerHighlight] = useState(null)
 
+  // Reading Progress state
+  const [readingProgress, setReadingProgress] = useState(null)
+  const [showResumePrompt, setShowResumePrompt] = useState(false)
+  const [completedPages, setCompletedPages] = useState([])
+  const [progressSaved, setProgressSaved] = useState(false)
+
+  // Bookmarks state
+  const [bookmarks, setBookmarks] = useState([])
+  const [showBookmarks, setShowBookmarks] = useState(false)
+  const [bookmarkTitle, setBookmarkTitle] = useState('')
+  const [bookmarkNote, setBookmarkNote] = useState('')
+  const [showBookmarkForm, setShowBookmarkForm] = useState(false)
+
   const pageRef = useRef(null)
+  const pageStartTimeRef = useRef(null)
 
   // Notification modal
   const {
@@ -64,10 +78,47 @@ function PDFAnnotator({ documents, notebookId, selectedDoc, setSelectedDoc }) {
       // Generate PDF URL for viewing
       const url = `${API_URL}/documents/${notebookId}/${selectedDoc.id}/pdf`
       setPdfUrl(url)
-      setPageNumber(1)
       loadAnnotations()
+      loadReadingProgress()
+      loadBookmarks()
     }
   }, [selectedDoc, notebookId])
+
+  // Auto-save progress when page changes
+  useEffect(() => {
+    if (selectedDoc && notebookId && numPages && pageNumber) {
+      // Track page start time
+      pageStartTimeRef.current = Date.now()
+
+      // Save progress and mark page as completed after 3 seconds
+      const timer = setTimeout(() => {
+        const timeSpent = pageStartTimeRef.current
+          ? Math.floor((Date.now() - pageStartTimeRef.current) / 1000)
+          : 0
+        // Mark page as completed if user has been on it for at least 3 seconds
+        const markCompleted = timeSpent >= 3
+        saveReadingProgress(markCompleted, timeSpent)
+      }, 3000)
+
+      return () => {
+        clearTimeout(timer)
+      }
+    }
+  }, [pageNumber, numPages, selectedDoc, notebookId])
+
+  // Save progress when leaving page (mark as completed if spent >10 seconds)
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      const timeSpent = pageStartTimeRef.current
+        ? Math.floor((Date.now() - pageStartTimeRef.current) / 1000)
+        : 0
+      const markCompleted = timeSpent > 10
+      saveReadingProgress(markCompleted, timeSpent)
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [pageNumber, selectedDoc])
 
   const loadAnnotations = async () => {
     try {
@@ -82,7 +133,10 @@ function PDFAnnotator({ documents, notebookId, selectedDoc, setSelectedDoc }) {
 
   const onDocumentLoadSuccess = ({ numPages }) => {
     setNumPages(numPages)
-    setPageNumber(1)
+    // Only set to page 1 if there's no existing progress
+    if (!readingProgress || !readingProgress.current_page) {
+      setPageNumber(1)
+    }
   }
 
   const onPageLoadSuccess = (page) => {
@@ -94,6 +148,142 @@ function PDFAnnotator({ documents, notebookId, selectedDoc, setSelectedDoc }) {
 
   const changePage = (offset) => {
     setPageNumber(prevPageNumber => Math.min(Math.max(1, prevPageNumber + offset), numPages))
+  }
+
+  // Reading Progress Functions
+  const loadReadingProgress = async () => {
+    try {
+      const token = localStorage.getItem('token')
+      const response = await axios.get(
+        `${API_URL}/reading-progress/${notebookId}/${selectedDoc.id}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+
+      if (response.data.has_progress) {
+        setReadingProgress(response.data)
+        setCompletedPages(response.data.completed_pages || [])
+        // Show resume prompt if user has progress
+        if (response.data.current_page > 1) {
+          setShowResumePrompt(true)
+        }
+      }
+    } catch (error) {
+      console.error('Error loading reading progress:', error)
+    }
+  }
+
+  const saveReadingProgress = async (markCompleted = false, timeSpent = 0) => {
+    if (!selectedDoc || !notebookId || !numPages) return
+
+    try {
+      const token = localStorage.getItem('token')
+      const response = await axios.post(
+        `${API_URL}/reading-progress`,
+        {
+          document_id: selectedDoc.id,
+          notebook_id: notebookId,
+          current_page: pageNumber,
+          total_pages: numPages,
+          mark_completed: markCompleted,
+          time_spent_seconds: timeSpent
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+
+      console.log('Progress saved:', response.data)
+
+      // Show brief saved indicator
+      setProgressSaved(true)
+      setTimeout(() => setProgressSaved(false), 2000)
+
+      // Update completed pages if this page was marked as completed
+      if (markCompleted && !completedPages.includes(pageNumber)) {
+        setCompletedPages([...completedPages, pageNumber])
+      }
+
+      // Update progress state with new data
+      if (readingProgress) {
+        setReadingProgress({
+          ...readingProgress,
+          completion_percentage: response.data.completion_percentage || 0,
+          current_page: pageNumber
+        })
+      }
+    } catch (error) {
+      console.error('Error saving reading progress:', error)
+    }
+  }
+
+  const resumeReading = () => {
+    if (readingProgress && readingProgress.current_page) {
+      setPageNumber(readingProgress.current_page)
+    }
+    setShowResumePrompt(false)
+  }
+
+  const startFromBeginning = () => {
+    setPageNumber(1)
+    setShowResumePrompt(false)
+  }
+
+  // Bookmarks Functions
+  const loadBookmarks = async () => {
+    try {
+      const token = localStorage.getItem('token')
+      const response = await axios.get(
+        `${API_URL}/bookmarks/${notebookId}/${selectedDoc.id}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+      setBookmarks(response.data.bookmarks || [])
+    } catch (error) {
+      console.error('Error loading bookmarks:', error)
+    }
+  }
+
+  const createBookmark = async () => {
+    try {
+      const token = localStorage.getItem('token')
+      await axios.post(
+        `${API_URL}/bookmarks`,
+        {
+          notebook_id: notebookId,
+          document_id: selectedDoc.id,
+          page_number: pageNumber,
+          title: bookmarkTitle || `Page ${pageNumber}`,
+          note: bookmarkNote || null
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+
+      await loadBookmarks()
+      setShowBookmarkForm(false)
+      setBookmarkTitle('')
+      setBookmarkNote('')
+      showSuccess('Success', 'Bookmark created successfully!')
+    } catch (error) {
+      console.error('Error creating bookmark:', error)
+      showError('Error', 'Failed to create bookmark')
+    }
+  }
+
+  const deleteBookmark = async (bookmarkId) => {
+    try {
+      const token = localStorage.getItem('token')
+      await axios.delete(
+        `${API_URL}/bookmarks/${bookmarkId}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+      await loadBookmarks()
+      showSuccess('Success', 'Bookmark deleted successfully!')
+    } catch (error) {
+      console.error('Error deleting bookmark:', error)
+      showError('Error', 'Failed to delete bookmark')
+    }
+  }
+
+  const goToBookmark = (pageNum) => {
+    setPageNumber(pageNum)
+    setShowBookmarks(false)
   }
 
   const handleTextSelection = (event) => {
@@ -291,6 +481,23 @@ function PDFAnnotator({ documents, notebookId, selectedDoc, setSelectedDoc }) {
           {selectedDoc.filename}
         </div>
         <div className="pdf-controls">
+          <button className="toolbar-button" onClick={() => setShowBookmarkForm(true)} title="Add Bookmark">
+            <FiBookmark />
+          </button>
+          <button className="toolbar-button" onClick={() => setShowBookmarks(!showBookmarks)} title="View Bookmarks">
+            <FiBook />
+            {bookmarks.length > 0 && <span style={{fontSize: '10px', marginLeft: '2px'}}>({bookmarks.length})</span>}
+          </button>
+          {readingProgress && (
+            <span style={{ padding: '0 8px', fontSize: '11px', color: 'var(--text-secondary)' }} title="Reading Progress">
+              <FiClock size={12} /> {Math.round(readingProgress.completion_percentage || 0)}%
+            </span>
+          )}
+          {progressSaved && (
+            <span style={{ padding: '0 8px', fontSize: '11px', color: 'var(--accent-primary)', animation: 'fadeIn 0.3s' }}>
+              <FiCheck size={12} /> Saved
+            </span>
+          )}
           <button className="toolbar-button" onClick={zoomOut} title="Zoom Out">
             <FiZoomOut />
           </button>
@@ -312,26 +519,125 @@ function PDFAnnotator({ documents, notebookId, selectedDoc, setSelectedDoc }) {
         </div>
       </div>
 
+      {/* Resume Reading Prompt */}
+      {showResumePrompt && (
+        <div className="resume-prompt">
+          <div className="resume-prompt-content">
+            <FiBook size={24} style={{ color: 'var(--accent-primary)' }} />
+            <div>
+              <h3>Continue Reading?</h3>
+              <p>You were on page {readingProgress?.current_page} ({Math.round(readingProgress?.completion_percentage || 0)}% complete)</p>
+            </div>
+            <div className="resume-prompt-buttons">
+              <button className="resume-button primary" onClick={resumeReading}>
+                Resume
+              </button>
+              <button className="resume-button" onClick={startFromBeginning}>
+                Start Over
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bookmark Creation Form */}
+      {showBookmarkForm && (
+        <div className="modal-overlay" onClick={() => setShowBookmarkForm(false)}>
+          <div className="bookmark-form" onClick={(e) => e.stopPropagation()}>
+            <h3><FiBookmark /> Add Bookmark</h3>
+            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
+              Page {pageNumber}
+            </p>
+            <input
+              type="text"
+              placeholder="Bookmark title (optional)"
+              value={bookmarkTitle}
+              onChange={(e) => setBookmarkTitle(e.target.value)}
+              style={{ marginBottom: '12px', padding: '10px', width: '100%', borderRadius: '8px', border: '1px solid var(--border-color)' }}
+            />
+            <textarea
+              placeholder="Note (optional)"
+              value={bookmarkNote}
+              onChange={(e) => setBookmarkNote(e.target.value)}
+              rows={3}
+              style={{ marginBottom: '16px', padding: '10px', width: '100%', borderRadius: '8px', border: '1px solid var(--border-color)' }}
+            />
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <button className="cancel-button" onClick={() => setShowBookmarkForm(false)}>
+                Cancel
+              </button>
+              <button className="submit-button" onClick={createBookmark}>
+                Save Bookmark
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="pdf-content-wrapper">
         <div className="pdf-sidebar">
           {/* Sidebar Tabs */}
           <div className="sidebar-tabs">
             <button
-              className={`sidebar-tab ${!showAnalyzer ? 'active' : ''}`}
-              onClick={() => setShowAnalyzer(false)}
+              className={`sidebar-tab ${!showAnalyzer && !showBookmarks ? 'active' : ''}`}
+              onClick={() => { setShowAnalyzer(false); setShowBookmarks(false); }}
             >
               <FiFileText /> Annotations ({annotations.length})
             </button>
             <button
+              className={`sidebar-tab ${showBookmarks ? 'active' : ''}`}
+              onClick={() => { setShowAnalyzer(false); setShowBookmarks(true); }}
+            >
+              <FiBookmark /> Bookmarks ({bookmarks.length})
+            </button>
+            <button
               className={`sidebar-tab ${showAnalyzer ? 'active' : ''}`}
-              onClick={() => setShowAnalyzer(true)}
+              onClick={() => { setShowAnalyzer(true); setShowBookmarks(false); }}
             >
               <FiZap /> AI Analyzer
             </button>
           </div>
 
-          {/* Show either Annotations or Analyzer */}
-          {!showAnalyzer ? (
+          {/* Show Annotations, Bookmarks, or Analyzer */}
+          {showBookmarks ? (
+            <div className="bookmarks-list">
+              {bookmarks.length === 0 ? (
+                <p style={{ padding: '16px', color: 'var(--text-secondary)', fontSize: '13px' }}>
+                  No bookmarks yet. Click the bookmark icon in the toolbar to save pages.
+                </p>
+              ) : (
+                bookmarks.map((bookmark) => (
+                  <div key={bookmark._id} className="bookmark-item">
+                    <div className="bookmark-header">
+                      <div className="bookmark-page-badge" onClick={() => goToBookmark(bookmark.page_number)}>
+                        Page {bookmark.page_number}
+                      </div>
+                      <button
+                        className="bookmark-delete"
+                        onClick={() => deleteBookmark(bookmark._id)}
+                        title="Delete bookmark"
+                      >
+                        <FiX size={14} />
+                      </button>
+                    </div>
+                    <div
+                      className="bookmark-title"
+                      onClick={() => goToBookmark(bookmark.page_number)}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      {bookmark.title}
+                    </div>
+                    {bookmark.note && (
+                      <div className="bookmark-note">{bookmark.note}</div>
+                    )}
+                    <div className="bookmark-date">
+                      {new Date(bookmark.created_at).toLocaleDateString()}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          ) : !showAnalyzer ? (
             <>
               <div className="annotation-help-banner">
                 <FiPlus size={16} />
