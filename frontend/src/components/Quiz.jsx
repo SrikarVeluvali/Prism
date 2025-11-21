@@ -196,6 +196,7 @@ function Quiz({ documents, selectedDocIds, notebookId }) {
                 <option value="easy">Easy</option>
                 <option value="medium">Medium</option>
                 <option value="hard">Hard</option>
+                <option value="mixed">Mixed (Easy, Medium & Hard)</option>
               </select>
             </div>
 
@@ -312,7 +313,27 @@ function Quiz({ documents, selectedDocIds, notebookId }) {
         </div>
 
         <div className="quiz-question-card">
-          <div className="quiz-question-topic">{question.topic}</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <div className="quiz-question-topic">{question.topic}</div>
+            {question.difficulty && (
+              <span
+                style={{
+                  padding: '2px 8px',
+                  borderRadius: '4px',
+                  fontSize: '11px',
+                  fontWeight: 'bold',
+                  textTransform: 'uppercase',
+                  backgroundColor:
+                    question.difficulty.toLowerCase() === 'easy' ? '#10b981' :
+                    question.difficulty.toLowerCase() === 'medium' ? '#f59e0b' :
+                    '#ef4444',
+                  color: 'white'
+                }}
+              >
+                {question.difficulty}
+              </span>
+            )}
+          </div>
           <h3 className="quiz-question">{question.question}</h3>
 
           <div className="quiz-options">
@@ -398,6 +419,9 @@ function Quiz({ documents, selectedDocIds, notebookId }) {
                   ? 'Good effort!'
                   : 'Keep practicing!'}
             </p>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '8px', fontStyle: 'italic' }}>
+              Weighted scoring: Hard questions contribute 2x, Medium 1.5x, Easy 1x to your final score
+            </p>
           </div>
 
           <div className="results-analysis">
@@ -442,7 +466,27 @@ function Quiz({ documents, selectedDocIds, notebookId }) {
                   }`}
               >
                 <div className="result-header">
-                  <span className="result-number">Question {index + 1}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span className="result-number">Question {index + 1}</span>
+                    {result.difficulty && (
+                      <span
+                        style={{
+                          padding: '2px 6px',
+                          borderRadius: '3px',
+                          fontSize: '10px',
+                          fontWeight: 'bold',
+                          textTransform: 'uppercase',
+                          backgroundColor:
+                            result.difficulty.toLowerCase() === 'easy' ? '#10b981' :
+                            result.difficulty.toLowerCase() === 'medium' ? '#f59e0b' :
+                            '#ef4444',
+                          color: 'white'
+                        }}
+                      >
+                        {result.difficulty}
+                      </span>
+                    )}
+                  </div>
                   {result.is_correct ? (
                     <FiCheck className="result-icon correct" />
                   ) : (

@@ -19,7 +19,7 @@
  */
 
 import { useState, useRef, useEffect } from 'react'
-import { FiUpload, FiSend, FiTrash2, FiFile, FiMessageSquare, FiAward, FiFileText, FiArrowLeft, FiEdit3, FiEye, FiMic, FiTrendingUp, FiAlertTriangle, FiCheck, FiLogOut, FiBarChart2 } from 'react-icons/fi'
+import { FiUpload, FiSend, FiTrash2, FiFile, FiMessageSquare, FiAward, FiFileText, FiArrowLeft, FiEdit3, FiEye, FiMic, FiTrendingUp, FiAlertTriangle, FiCheck, FiLogOut, FiBarChart2, FiCheckCircle } from 'react-icons/fi'
 import axios from 'axios'
 import FileUploadModal from './components/FileUploadModal'
 import Quiz from './components/Quiz'
@@ -67,6 +67,12 @@ function AppContent() {
   const [errorModal, setErrorModal] = useState({
     show: false,
     message: ''
+  })
+  const [validationModal, setValidationModal] = useState({
+    show: false,
+    docName: '',
+    isValidating: false,
+    results: null
   })
   const chatEndRef = useRef(null)
   const textareaRef = useRef(null)
@@ -263,6 +269,46 @@ function AppContent() {
       } else {
         return [...prev, docId]
       }
+    })
+  }
+
+  const handleValidateDocument = async (docId, docName) => {
+    setValidationModal({
+      show: true,
+      docName: docName,
+      isValidating: true,
+      results: null
+    })
+
+    try {
+      const response = await axios.post(`${API_URL}/validate-document/${docId}`)
+      setValidationModal({
+        show: true,
+        docName: docName,
+        isValidating: false,
+        results: response.data
+      })
+    } catch (error) {
+      console.error('Error validating document:', error)
+      setValidationModal({
+        show: false,
+        docName: '',
+        isValidating: false,
+        results: null
+      })
+      setErrorModal({
+        show: true,
+        message: `Failed to validate document. ${error.response?.data?.detail || 'Please try again.'}`
+      })
+    }
+  }
+
+  const closeValidationModal = () => {
+    setValidationModal({
+      show: false,
+      docName: '',
+      isValidating: false,
+      results: null
     })
   }
 
@@ -501,15 +547,41 @@ function AppContent() {
 
                   <div className="document-info">
                     <span>{doc.chunks_count} chunks</span>
-                    <button
-                      className="delete-button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleDeleteDocument(doc.id, doc.filename)
-                      }}
-                    >
-                      <FiTrash2 size={14} />
-                    </button>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      <button
+                        className="validate-button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleValidateDocument(doc.id, doc.filename)
+                        }}
+                        title="Validate document"
+                        style={{
+                          padding: '6px',
+                          backgroundColor: 'var(--accent-primary)',
+                          border: 'none',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          transition: 'all 0.2s',
+                          color: 'white'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--primary-dark)'}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-primary)'}
+                      >
+                        <FiCheckCircle size={14} />
+                      </button>
+                      <button
+                        className="delete-button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleDeleteDocument(doc.id, doc.filename)
+                        }}
+                      >
+                        <FiTrash2 size={14} />
+                      </button>
+                    </div>
                   </div>
                 </div>
               )
@@ -795,6 +867,150 @@ function AppContent() {
                 OK
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Validation Modal */}
+      {validationModal.show && (
+        <div className="modal-overlay notification-overlay" onClick={closeValidationModal}>
+          <div
+            className="notification-modal"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: '600px',
+              maxHeight: '80vh',
+              overflow: 'auto'
+            }}
+          >
+            <div className="notification-icon" style={{
+              backgroundColor: validationModal.isValidating ? 'var(--accent-primary)' :
+                validationModal.results?.issues?.length > 0 ? '#f59e0b' : '#10b981'
+            }}>
+              {validationModal.isValidating ? (
+                <div className="loading-dots" style={{ margin: 0 }}>
+                  <div className="loading-dot" style={{ width: '8px', height: '8px', backgroundColor: 'white' }}></div>
+                  <div className="loading-dot" style={{ width: '8px', height: '8px', backgroundColor: 'white' }}></div>
+                  <div className="loading-dot" style={{ width: '8px', height: '8px', backgroundColor: 'white' }}></div>
+                </div>
+              ) : validationModal.results?.issues?.length > 0 ? (
+                <FiAlertTriangle size={32} />
+              ) : (
+                <FiCheckCircle size={32} />
+              )}
+            </div>
+
+            <div className="notification-content">
+              <h3 className="notification-title">
+                {validationModal.isValidating ? 'Validating Document...' :
+                  validationModal.results?.issues?.length > 0 ? 'Validation Issues Found' : 'Validation Successful'}
+              </h3>
+              <p className="notification-message" style={{ fontWeight: 600, marginBottom: '12px' }}>
+                {validationModal.docName}
+              </p>
+
+              {!validationModal.isValidating && validationModal.results && (
+                <>
+                  {validationModal.results.issues?.length === 0 ? (
+                    <div style={{
+                      padding: '16px',
+                      backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                      borderRadius: '8px',
+                      marginTop: '12px'
+                    }}>
+                      <p style={{ color: '#10b981', margin: 0 }}>
+                        ✓ No issues detected. The document appears to be valid and well-formatted.
+                      </p>
+                    </div>
+                  ) : (
+                    <div style={{ marginTop: '16px' }}>
+                      <p style={{
+                        color: 'var(--text-secondary)',
+                        fontSize: '14px',
+                        marginBottom: '12px'
+                      }}>
+                        Found {validationModal.results.issues.length} potential issue{validationModal.results.issues.length !== 1 ? 's' : ''}:
+                      </p>
+                      <div style={{
+                        maxHeight: '300px',
+                        overflowY: 'auto',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px'
+                      }}>
+                        {validationModal.results.issues.map((issue, index) => (
+                          <div
+                            key={index}
+                            style={{
+                              padding: '12px',
+                              backgroundColor: 'var(--bg-secondary)',
+                              borderLeft: `3px solid ${
+                                issue.severity === 'high' ? '#ef4444' :
+                                issue.severity === 'medium' ? '#f59e0b' : '#3b82f6'
+                              }`,
+                              borderRadius: '4px'
+                            }}
+                          >
+                            <div style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              marginBottom: '6px'
+                            }}>
+                              <span style={{ fontWeight: 600, fontSize: '14px' }}>
+                                {issue.type}
+                              </span>
+                              <span style={{
+                                fontSize: '11px',
+                                padding: '2px 6px',
+                                borderRadius: '3px',
+                                backgroundColor:
+                                  issue.severity === 'high' ? '#ef4444' :
+                                  issue.severity === 'medium' ? '#f59e0b' : '#3b82f6',
+                                color: 'white',
+                                textTransform: 'uppercase',
+                                fontWeight: 600
+                              }}>
+                                {issue.severity}
+                              </span>
+                            </div>
+                            <p style={{
+                              fontSize: '13px',
+                              color: 'var(--text-secondary)',
+                              margin: 0
+                            }}>
+                              {issue.description}
+                            </p>
+                            {issue.location && (
+                              <p style={{
+                                fontSize: '12px',
+                                color: 'var(--text-secondary)',
+                                marginTop: '6px',
+                                fontStyle: 'italic',
+                                opacity: 0.7
+                              }}>
+                                Location: {issue.location}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {!validationModal.isValidating && (
+              <div className="notification-actions">
+                <button
+                  className="btn-primary"
+                  onClick={closeValidationModal}
+                >
+                  Close
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

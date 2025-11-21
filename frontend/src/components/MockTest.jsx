@@ -267,6 +267,7 @@ function MockTest({ documents, selectedDocIds, notebookId }) {
                 <option value="easy">Easy</option>
                 <option value="medium">Medium</option>
                 <option value="hard">Hard</option>
+                <option value="mixed">Mixed (Easy, Medium & Hard)</option>
               </select>
             </div>
 
@@ -345,6 +346,25 @@ function MockTest({ documents, selectedDocIds, notebookId }) {
                   <div className="question-header">
                     <span className="question-number">Question {index + 1}</span>
                     <span className="question-topic">{question.topic}</span>
+                    {question.difficulty && (
+                      <span
+                        className={`difficulty-badge ${question.difficulty.toLowerCase()}`}
+                        style={{
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          fontSize: '11px',
+                          fontWeight: 'bold',
+                          textTransform: 'uppercase',
+                          backgroundColor:
+                            question.difficulty.toLowerCase() === 'easy' ? '#10b981' :
+                            question.difficulty.toLowerCase() === 'medium' ? '#f59e0b' :
+                            '#ef4444',
+                          color: 'white'
+                        }}
+                      >
+                        {question.difficulty}
+                      </span>
+                    )}
                   </div>
                   <p className="question-text">{question.question}</p>
                   <textarea
@@ -376,6 +396,25 @@ function MockTest({ documents, selectedDocIds, notebookId }) {
                   <div className="question-header">
                     <span className="question-number">Coding {index + 1}</span>
                     <span className="question-topic">{question.topic}</span>
+                    {question.difficulty && (
+                      <span
+                        className={`difficulty-badge ${question.difficulty.toLowerCase()}`}
+                        style={{
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          fontSize: '11px',
+                          fontWeight: 'bold',
+                          textTransform: 'uppercase',
+                          backgroundColor:
+                            question.difficulty.toLowerCase() === 'easy' ? '#10b981' :
+                            question.difficulty.toLowerCase() === 'medium' ? '#f59e0b' :
+                            '#ef4444',
+                          color: 'white'
+                        }}
+                      >
+                        {question.difficulty}
+                      </span>
+                    )}
                   </div>
                   <p className="question-text">{question.question}</p>
 
@@ -428,6 +467,25 @@ function MockTest({ documents, selectedDocIds, notebookId }) {
                   <div className="question-header">
                     <span className="question-number">Reorder {qIndex + 1}</span>
                     <span className="question-topic">{question.topic}</span>
+                    {question.difficulty && (
+                      <span
+                        className={`difficulty-badge ${question.difficulty.toLowerCase()}`}
+                        style={{
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          fontSize: '11px',
+                          fontWeight: 'bold',
+                          textTransform: 'uppercase',
+                          backgroundColor:
+                            question.difficulty.toLowerCase() === 'easy' ? '#10b981' :
+                            question.difficulty.toLowerCase() === 'medium' ? '#f59e0b' :
+                            '#ef4444',
+                          color: 'white'
+                        }}
+                      >
+                        {question.difficulty}
+                      </span>
+                    )}
                   </div>
                   <p className="question-text">{question.question}</p>
                   <p className="reorder-instruction">Drag and drop to reorder</p>
@@ -481,6 +539,9 @@ function MockTest({ documents, selectedDocIds, notebookId }) {
             </div>
 
             <h2>Mock Test Results</h2>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '8px', fontStyle: 'italic' }}>
+              Weighted scoring: Hard questions contribute 2x, Medium 1.5x, Easy 1x to your final score
+            </p>
           </div>
 
           <div className="results-analysis">
@@ -495,7 +556,27 @@ function MockTest({ documents, selectedDocIds, notebookId }) {
               {results.theory_results.map((result, index) => (
                 <div key={index} className="result-card">
                   <div className="result-card-header">
-                    <span>Question {index + 1}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span>Question {index + 1}</span>
+                      {result.difficulty && (
+                        <span
+                          style={{
+                            padding: '2px 6px',
+                            borderRadius: '3px',
+                            fontSize: '10px',
+                            fontWeight: 'bold',
+                            textTransform: 'uppercase',
+                            backgroundColor:
+                              result.difficulty.toLowerCase() === 'easy' ? '#10b981' :
+                              result.difficulty.toLowerCase() === 'medium' ? '#f59e0b' :
+                              '#ef4444',
+                            color: 'white'
+                          }}
+                        >
+                          {result.difficulty}
+                        </span>
+                      )}
+                    </div>
                     <span
                       className="result-score"
                       style={{ color: getScoreColor(result.score) }}
@@ -548,7 +629,27 @@ function MockTest({ documents, selectedDocIds, notebookId }) {
               {results.coding_results.map((result, index) => (
                 <div key={index} className="result-card">
                   <div className="result-card-header">
-                    <span>Coding {index + 1}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span>Coding {index + 1}</span>
+                      {result.difficulty && (
+                        <span
+                          style={{
+                            padding: '2px 6px',
+                            borderRadius: '3px',
+                            fontSize: '10px',
+                            fontWeight: 'bold',
+                            textTransform: 'uppercase',
+                            backgroundColor:
+                              result.difficulty.toLowerCase() === 'easy' ? '#10b981' :
+                              result.difficulty.toLowerCase() === 'medium' ? '#f59e0b' :
+                              '#ef4444',
+                            color: 'white'
+                          }}
+                        >
+                          {result.difficulty}
+                        </span>
+                      )}
+                    </div>
                     <span
                       className="result-score"
                       style={{ color: getScoreColor(result.score) }}
@@ -600,7 +701,27 @@ function MockTest({ documents, selectedDocIds, notebookId }) {
               {results.reorder_results.map((result, index) => (
                 <div key={index} className="result-card">
                   <div className="result-card-header">
-                    <span>Reorder {index + 1}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span>Reorder {index + 1}</span>
+                      {result.difficulty && (
+                        <span
+                          style={{
+                            padding: '2px 6px',
+                            borderRadius: '3px',
+                            fontSize: '10px',
+                            fontWeight: 'bold',
+                            textTransform: 'uppercase',
+                            backgroundColor:
+                              result.difficulty.toLowerCase() === 'easy' ? '#10b981' :
+                              result.difficulty.toLowerCase() === 'medium' ? '#f59e0b' :
+                              '#ef4444',
+                            color: 'white'
+                          }}
+                        >
+                          {result.difficulty}
+                        </span>
+                      )}
+                    </div>
                     <span
                       className="result-score"
                       style={{ color: getScoreColor(result.score) }}

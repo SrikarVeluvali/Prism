@@ -1604,6 +1604,134 @@ async def delete_document(doc_id: str, current_user: TokenData = Depends(get_cur
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/validate-document/{doc_id}")
+async def validate_document(doc_id: str, current_user: TokenData = Depends(get_current_user)):
+    """Validate a document for potential issues and quality problems"""
+    try:
+        # Find the document
+        doc = await documents_collection.find_one({"doc_id": doc_id})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        notebook_id = doc["notebook_id"]
+
+        # Verify notebook ownership
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(notebook_id),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        # Only support PDF for validation
+        if doc.get("file_type") != "pdf":
+            return {
+                "issues": [],
+                "message": "Validation is currently only supported for PDF documents"
+            }
+
+        # Get the document content from vectors
+        # Use the correct embedding dimension (768 for all-mpnet-base-v2)
+        results = index.query(
+            vector=[0.0] * 768,  # Dummy vector with correct dimension
+            filter={"doc_id": doc_id},
+            top_k=10000,
+            include_metadata=True
+        )
+
+        if not results.matches:
+            return {
+                "issues": [{
+                    "type": "No Content",
+                    "description": "No content found in document. The document may be empty or failed to process.",
+                    "severity": "high",
+                    "location": "Document"
+                }]
+            }
+
+        # Collect all text chunks
+        all_chunks = [match.metadata.get('text', '') for match in results.matches]
+        total_text = " ".join(all_chunks)
+
+        # Analyze with AI
+        validation_prompt = f"""Analyze the following document content and identify potential issues. Perform both TECHNICAL and CONTENT validation:
+
+TECHNICAL VALIDATION - Look for:
+1. OCR errors (garbled text, unusual characters, repeated characters)
+2. Formatting issues (missing spaces, broken sentences, improper line breaks)
+3. Incomplete content (truncated sentences, missing sections)
+4. Data quality problems (inconsistent formatting, unusual patterns)
+5. Readability issues (very short fragments, incomprehensible text)
+
+CONTENT VALIDATION - Look for:
+1. Factual accuracy issues (incorrect information, outdated facts, misleading statements)
+2. Logical inconsistencies (contradictions, flawed reasoning, unsupported claims)
+3. Missing context (incomplete explanations, undefined terms, missing prerequisites)
+4. Poor structure (disorganized content, unclear progression, missing transitions)
+5. Educational quality (overly vague explanations, missing examples, inadequate depth)
+6. Bias or misleading content (one-sided views, unsubstantiated opinions presented as facts)
+7. Citation or reference issues (missing sources for claims, unreferenced data)
+
+Document content sample (first 5000 characters):
+{total_text[:5000]}
+
+Total document length: {len(total_text)} characters
+Number of chunks: {len(all_chunks)}
+
+Return a JSON array of issues found. Each issue should have:
+- type: Brief category name (e.g., "OCR Error", "Factual Inaccuracy", "Missing Context", "Poor Structure")
+- description: Detailed description of the issue with specific examples if possible
+- severity: "high" (critical issues affecting understanding/accuracy), "medium" (notable issues that should be addressed), or "low" (minor issues)
+- location: Where the issue was found (e.g., "Throughout document", "Beginning section", "Mathematical formulas")
+
+If NO issues are found, return an empty array: []
+
+IMPORTANT: Return ONLY the JSON array, no additional text."""
+
+        chat_completion = groq_client.chat.completions.create(
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a document quality validator. Respond with ONLY valid JSON arrays."
+                },
+                {
+                    "role": "user",
+                    "content": validation_prompt
+                }
+            ],
+            model="llama-3.3-70b-versatile",
+            temperature=0.3,
+            max_tokens=3000
+        )
+
+        response_text = chat_completion.choices[0].message.content.strip()
+
+        # Extract JSON from response
+        json_match = re.search(r'\[[\s\S]*\]', response_text)
+        if json_match:
+            response_text = json_match.group()
+
+        try:
+            issues = json.loads(response_text)
+            if not isinstance(issues, list):
+                issues = []
+        except json.JSONDecodeError:
+            # If parsing fails, return no issues
+            issues = []
+
+        return {
+            "issues": issues,
+            "total_chunks": len(all_chunks),
+            "total_characters": len(total_text)
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error validating document: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/documents/{notebook_id}/{doc_id}/analyze")
 async def analyze_document(
     notebook_id: str,
@@ -1875,6 +2003,18 @@ async def generate_quiz(request: QuizGenerateRequest, current_user: TokenData = 
         context = "\n\n".join([chunk['text'] for chunk in selected_chunks])
         print(f"Retrieved {len(selected_chunks)} chunks for quiz generation")
 
+        # Determine difficulty instruction based on mixed vs fixed difficulty
+        if request.difficulty.lower() == "mixed":
+            difficulty_instruction = """4. Difficulty level: MIXED - Randomly distribute difficulties across all questions. Each question should have "difficulty" set to either "easy", "medium", or "hard".
+   - Aim for a balanced mix (roughly equal distribution)
+   - Hard questions should test deeper understanding and analysis
+   - Medium questions should test solid comprehension
+   - Easy questions should test basic recall"""
+            difficulty_field = '"difficulty": "easy" or "medium" or "hard",'
+        else:
+            difficulty_instruction = f"4. Difficulty level: {request.difficulty} - ALL questions should have the same difficulty level"
+            difficulty_field = f'"difficulty": "{request.difficulty}",'
+
         # Generate quiz using Groq
         prompt = f"""Based on the following content from educational documents, generate {request.num_questions} multiple-choice questions (MCQs).
 
@@ -1885,7 +2025,7 @@ Requirements:
 1. Generate exactly {request.num_questions} questions
 2. Each question should have 4 options (A, B, C, D)
 3. Questions should test understanding of the content
-4. Difficulty level: {request.difficulty}
+{difficulty_instruction}
 5. Indicate the correct answer for each question
 6. Questions should be diverse and cover different topics from the content
 
@@ -1896,7 +2036,8 @@ Format your response as a JSON array with this structure:
     "options": ["Option A", "Option B", "Option C", "Option D"],
     "correct_answer": 0,
     "explanation": "Brief explanation of why this is correct",
-    "topic": "Main topic this question covers"
+    "topic": "Main topic this question covers",
+    {difficulty_field}
   }}
 ]
 
@@ -1943,12 +2084,13 @@ IMPORTANT: Return ONLY the JSON array, no additional text."""
             "difficulty": request.difficulty
         }
 
-        # Return questions without correct answers
+        # Return questions without correct answers (but include difficulty for display)
         questions_for_user = [
             {
                 "question": q["question"],
                 "options": q["options"],
-                "topic": q.get("topic", "General")
+                "topic": q.get("topic", "General"),
+                "difficulty": q.get("difficulty", request.difficulty)
             }
             for q in questions
         ]
@@ -1974,18 +2116,34 @@ async def submit_quiz(request: QuizSubmitRequest):
         quiz = quizzes_store[request.quiz_id]
         questions = quiz["questions"]
 
-        # Calculate score
+        # Calculate score with difficulty-based weighting
+        # Difficulty weights: easy=1.0, medium=1.5, hard=2.0
+        def get_difficulty_weight(difficulty):
+            weights = {
+                "easy": 1.0,
+                "medium": 1.5,
+                "hard": 2.0
+            }
+            return weights.get(difficulty.lower() if difficulty else "medium", 1.5)
+
         correct_count = 0
         total_questions = len(questions)
         results = []
         topic_performance = {}
+        weighted_score_sum = 0
+        total_weight = 0
 
         for answer in request.answers:
             question = questions[answer.question_index]
             is_correct = answer.selected_option == question["correct_answer"]
+            difficulty = question.get("difficulty", quiz.get("difficulty", "medium"))
+            weight = get_difficulty_weight(difficulty)
 
+            # Add to weighted score
+            total_weight += weight
             if is_correct:
                 correct_count += 1
+                weighted_score_sum += weight
 
             topic = question.get("topic", "General")
             if topic not in topic_performance:
@@ -2002,10 +2160,12 @@ async def submit_quiz(request: QuizSubmitRequest):
                 "correct_answer": question["correct_answer"],
                 "is_correct": is_correct,
                 "explanation": question.get("explanation", ""),
-                "topic": topic
+                "topic": topic,
+                "difficulty": difficulty
             })
 
-        score_percentage = (correct_count / total_questions) * 100
+        # Calculate weighted score percentage
+        score_percentage = (weighted_score_sum / total_weight * 100) if total_weight > 0 else 0
 
         # Generate analysis using Groq
         weak_topics = [
@@ -2186,6 +2346,18 @@ async def generate_mock_test(request: MockTestGenerateRequest, current_user: Tok
 
         func_example = lang_examples.get(request.programming_language.lower(), 'def function_name(params):')
 
+        # Determine difficulty instruction based on mixed vs fixed difficulty
+        if request.difficulty.lower() == "mixed":
+            difficulty_instruction = """7. Difficulty: MIXED - Randomly distribute difficulties across all questions. Each question should have "difficulty" set to either "easy", "medium", or "hard".
+   - Aim for a balanced mix (roughly equal distribution)
+   - Hard questions should be more conceptually challenging or require deeper analysis
+   - Medium questions should test solid understanding
+   - Easy questions should test basic recall and simple concepts"""
+            difficulty_example = '"easy" or "medium" or "hard"'
+        else:
+            difficulty_instruction = f"7. Difficulty: {request.difficulty} - ALL questions should have the same difficulty level"
+            difficulty_example = f'"{request.difficulty}"'
+
         prompt = f"""Based on the following educational content, generate a comprehensive mock test.
 
 Content:
@@ -2198,7 +2370,7 @@ Generate a JSON object with the following structure:
       "question": "Theory question text?",
       "topic": "Topic name",
       "expected_points": ["key point 1", "key point 2"],
-      "difficulty": "{request.difficulty}"
+      "difficulty": {difficulty_example}
     }}
   ],
   "coding_questions": [
@@ -2210,7 +2382,7 @@ Generate a JSON object with the following structure:
       "test_cases": [
         {{"input": "example input", "expected_output": "expected result"}}
       ],
-      "difficulty": "{request.difficulty}"
+      "difficulty": {difficulty_example}
     }}
   ],
   "reorder_questions": [
@@ -2219,7 +2391,7 @@ Generate a JSON object with the following structure:
       "topic": "Topic name",
       "items": ["Step 1", "Step 2", "Step 3", "Step 4"],
       "correct_order": ["Step 2", "Step 1", "Step 4", "Step 3"],
-      "difficulty": "{request.difficulty}"
+      "difficulty": {difficulty_example}
     }}
   ]
 }}
@@ -2231,7 +2403,7 @@ Requirements:
 4. Theory questions should test understanding and ask for explanations
 5. Coding questions MUST be in {request.programming_language.upper()} with appropriate syntax and function signatures
 6. Reorder questions should have items shuffled (not in correct order), make sure not to add obvious hints to these reordering questions.)
-7. Difficulty: {request.difficulty}
+{difficulty_instruction}
 
 IMPORTANT: Return ONLY the JSON object, no additional text."""
 
@@ -2278,13 +2450,14 @@ IMPORTANT: Return ONLY the JSON object, no additional text."""
             "programming_language": request.programming_language
         }
 
-        # Return questions without answers
+        # Return questions without answers (but include difficulty for display purposes)
         return {
             "test_id": test_id,
             "theory_questions": [
                 {
                     "question": q["question"],
-                    "topic": q.get("topic", "General")
+                    "topic": q.get("topic", "General"),
+                    "difficulty": q.get("difficulty", request.difficulty)
                 }
                 for q in test_data.get("theory_questions", [])
             ],
@@ -2294,7 +2467,8 @@ IMPORTANT: Return ONLY the JSON object, no additional text."""
                     "topic": q.get("topic", "Coding"),
                     "function_signature": q.get("function_signature", ""),
                     "language": q.get("language", "python"),
-                    "test_cases": [{"input": tc["input"]} for tc in q.get("test_cases", [])]
+                    "test_cases": [{"input": tc["input"]} for tc in q.get("test_cases", [])],
+                    "difficulty": q.get("difficulty", request.difficulty)
                 }
                 for q in (test_data.get("coding_questions", []) if has_code else [])
             ],
@@ -2302,7 +2476,8 @@ IMPORTANT: Return ONLY the JSON object, no additional text."""
                 {
                     "question": q["question"],
                     "topic": q.get("topic", "General"),
-                    "items": q["items"]  # Already shuffled by AI
+                    "items": q["items"],  # Already shuffled by AI
+                    "difficulty": q.get("difficulty", request.difficulty)
                 }
                 for q in test_data.get("reorder_questions", [])
             ],
@@ -2416,7 +2591,8 @@ CRITICAL: Return ONLY the JSON object. No explanations before or after."""
                 "feedback": evaluation["feedback"],
                 "covered_points": evaluation.get("covered_points", []),
                 "missing_points": evaluation.get("missing_points", []),
-                "topic": question.get("topic", "General")
+                "topic": question.get("topic", "General"),
+                "difficulty": question.get("difficulty", test.get("difficulty", "medium"))
             })
 
         # Evaluate coding questions
@@ -2510,7 +2686,8 @@ CRITICAL: Return ONLY the JSON object. No explanations before or after."""
                 "code_quality": evaluation.get("code_quality", ""),
                 "feedback": evaluation["feedback"],
                 "suggestions": evaluation.get("suggestions", []),
-                "topic": question.get("topic", "Coding")
+                "topic": question.get("topic", "Coding"),
+                "difficulty": question.get("difficulty", test.get("difficulty", "medium"))
             })
 
         # Evaluate reorder questions
@@ -2535,12 +2712,27 @@ CRITICAL: Return ONLY the JSON object. No explanations before or after."""
                 "score": score,
                 "correct_positions": correct_count,
                 "total_items": len(correct_order),
-                "topic": question.get("topic", "General")
+                "topic": question.get("topic", "General"),
+                "difficulty": question.get("difficulty", test.get("difficulty", "medium"))
             })
 
-        # Calculate overall score
-        all_scores = [r["score"] for r in theory_results + coding_results + reorder_results]
-        overall_score = sum(all_scores) / len(all_scores) if all_scores else 0
+        # Calculate overall score with difficulty-based weighting
+        # Difficulty weights: easy=1.0, medium=1.5, hard=2.0
+        def get_difficulty_weight(difficulty):
+            weights = {
+                "easy": 1.0,
+                "medium": 1.5,
+                "hard": 2.0
+            }
+            return weights.get(difficulty.lower() if difficulty else "medium", 1.5)
+
+        all_results = theory_results + coding_results + reorder_results
+        if all_results:
+            weighted_sum = sum(r["score"] * get_difficulty_weight(r.get("difficulty", "medium")) for r in all_results)
+            total_weight = sum(get_difficulty_weight(r.get("difficulty", "medium")) for r in all_results)
+            overall_score = weighted_sum / total_weight if total_weight > 0 else 0
+        else:
+            overall_score = 0
 
         print(f"Evaluation complete. Overall score: {overall_score:.1f}%")
 
@@ -2557,11 +2749,29 @@ CRITICAL: Return ONLY the JSON object. No explanations before or after."""
             scores = topic_performance[topic]["scores"]
             topic_performance[topic]["average"] = sum(scores) / len(scores)
 
-        # Generate overall analysis
-        if all_scores:
-            theory_avg = sum(r['score'] for r in theory_results) / len(theory_results) if theory_results else 0
-            coding_avg = sum(r['score'] for r in coding_results) / len(coding_results) if coding_results else 0
-            reorder_avg = sum(r['score'] for r in reorder_results) / len(reorder_results) if reorder_results else 0
+        # Generate overall analysis with weighted averages
+        if all_results:
+            # Calculate weighted averages for each question type
+            if theory_results:
+                theory_weighted_sum = sum(r['score'] * get_difficulty_weight(r.get('difficulty', 'medium')) for r in theory_results)
+                theory_total_weight = sum(get_difficulty_weight(r.get('difficulty', 'medium')) for r in theory_results)
+                theory_avg = theory_weighted_sum / theory_total_weight if theory_total_weight > 0 else 0
+            else:
+                theory_avg = 0
+
+            if coding_results:
+                coding_weighted_sum = sum(r['score'] * get_difficulty_weight(r.get('difficulty', 'medium')) for r in coding_results)
+                coding_total_weight = sum(get_difficulty_weight(r.get('difficulty', 'medium')) for r in coding_results)
+                coding_avg = coding_weighted_sum / coding_total_weight if coding_total_weight > 0 else 0
+            else:
+                coding_avg = 0
+
+            if reorder_results:
+                reorder_weighted_sum = sum(r['score'] * get_difficulty_weight(r.get('difficulty', 'medium')) for r in reorder_results)
+                reorder_total_weight = sum(get_difficulty_weight(r.get('difficulty', 'medium')) for r in reorder_results)
+                reorder_avg = reorder_weighted_sum / reorder_total_weight if reorder_total_weight > 0 else 0
+            else:
+                reorder_avg = 0
 
             analysis_prompt = f"""Provide a comprehensive performance analysis for this mock test:
 
@@ -2593,14 +2803,12 @@ Keep it encouraging but honest and actionable."""
                 overall_analysis = analysis_completion.choices[0].message.content
             except Exception as e:
                 print(f"Error generating overall analysis: {str(e)}")
-                overall_analysis = f"Overall Score: {overall_score:.1f}%. You completed {len(all_scores)} questions. Review the detailed feedback for each question to improve."
+                overall_analysis = f"Overall Score: {overall_score:.1f}%. You completed {len(all_results)} questions. Review the detailed feedback for each question to improve."
         else:
             overall_analysis = "No questions were answered. Please complete the test and submit again."
 
-        # Calculate type-specific averages for database storage
-        theory_avg = sum(r['score'] for r in theory_results) / len(theory_results) if theory_results else 0
-        coding_avg = sum(r['score'] for r in coding_results) / len(coding_results) if coding_results else 0
-        reorder_avg = sum(r['score'] for r in reorder_results) / len(reorder_results) if reorder_results else 0
+        # Type-specific averages are already calculated above with weighted scoring
+        # No need to recalculate here - using the weighted averages from the analysis section
 
         # Save mock test result to database
         mock_test_result = {
