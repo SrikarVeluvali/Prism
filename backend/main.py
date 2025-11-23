@@ -3135,7 +3135,25 @@ async def generate_note(request: NoteGenerateRequest, current_user: TokenData = 
             prompt = f"Create study flashcards from the following content:\n\n{context}\n\nFormat each flashcard as:\nQ: [Question]\nA: [Answer]\n\nCreate 5-10 flashcards covering the most important concepts. Separate each flashcard with a blank line."
             ai_note_type = "ai_flashcards"
         elif request.note_type == "quiz":
-            prompt = f"Create a multiple choice quiz from the following content:\n\n{context}\n\nFor each question, provide:\n1. The question text\nA) First option\nB) Second option\nC) Third option\nD) Fourth option\nAnswer: [Correct letter]\nExplanation: [Brief explanation]\n\nCreate 5-8 questions. Separate each question with a blank line."
+            prompt = f"""Create a multiple choice quiz from the following content and return it as a JSON array.
+
+{context}
+
+Return ONLY a valid JSON array of quiz questions. Each question should have this exact structure:
+[
+  {{
+    "question": "Question text here?",
+    "options": ["Option A text", "Option B text", "Option C text", "Option D text"],
+    "correctAnswer": 0,
+    "explanation": "Brief explanation of the correct answer"
+  }}
+]
+
+Important:
+- correctAnswer is the index (0 for A, 1 for B, 2 for C, 3 for D)
+- Create 5-8 questions
+- Return ONLY valid JSON, no other text or markdown
+- Make questions challenging and test understanding of key concepts"""
             ai_note_type = "ai_quiz"
         elif request.note_type == "timeline":
             prompt = f"Create a chronological timeline from the following content:\n\n{context}\n\nFormat each event as:\n[Date/Year]: [Event Title]\n[Description]\n\nList events in chronological order. Separate each event with a blank line."
@@ -3155,6 +3173,13 @@ async def generate_note(request: NoteGenerateRequest, current_user: TokenData = 
         )
 
         generated_content = completion.choices[0].message.content
+
+        # Clean up quiz JSON if needed (remove markdown code blocks)
+        if ai_note_type == "ai_quiz":
+            # Remove markdown code blocks like ```json ... ``` or ``` ... ```
+            generated_content = re.sub(r'^```(?:json)?\s*\n', '', generated_content, flags=re.MULTILINE)
+            generated_content = re.sub(r'\n```\s*$', '', generated_content, flags=re.MULTILINE)
+            generated_content = generated_content.strip()
 
         # Create the note
         title = f"AI Generated {request.note_type.replace('_', ' ').title()}"

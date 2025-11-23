@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { FiMic, FiMicOff, FiPlay, FiPause, FiStopCircle, FiCheckCircle, FiMessageCircle, FiUser, FiCpu, FiVolume2 } from 'react-icons/fi'
 import axios from 'axios'
 
@@ -97,6 +97,36 @@ function VirtualInterview({ documents, selectedDocIds, notebookId }) {
     fetchReadingProgress()
   }, [selectedDocIds, useReadProgress, notebookId])
 
+  // End interview function (defined before timer useEffect)
+  const endInterview = useCallback(async () => {
+    // Stop speech and recognition
+    if (synthRef.current) {
+      synthRef.current.cancel()
+      setIsSpeaking(false)
+    }
+    if (recognitionRef.current && isListening) {
+      recognitionRef.current.stop()
+      setIsListening(false)
+    }
+
+    setIsProcessing(true)
+    try {
+      const response = await axios.post(`${API_URL}/interview/end`, {
+        session_id: sessionId
+      })
+
+      setFinalScore(response.data.score)
+      setFeedback(response.data.feedback)
+      setInterviewState('completed')
+    } catch (error) {
+      console.error('Error ending interview:', error)
+      alert('Failed to end interview. Please try again.')
+      setInterviewState('completed') // Force completion even on error to avoid stuck state
+    } finally {
+      setIsProcessing(false)
+    }
+  }, [sessionId, isListening])
+
   // Timer
   useEffect(() => {
     let interval
@@ -112,7 +142,7 @@ function VirtualInterview({ documents, selectedDocIds, notebookId }) {
       }, 1000)
     }
     return () => clearInterval(interval)
-  }, [interviewState, startTime, duration])
+  }, [interviewState, startTime, duration, endInterview])
 
   // Auto-scroll messages
   useEffect(() => {
@@ -254,27 +284,6 @@ function VirtualInterview({ documents, selectedDocIds, notebookId }) {
     if (synthRef.current) {
       synthRef.current.cancel()
       setIsSpeaking(false)
-    }
-  }
-
-  const endInterview = async () => {
-    stopSpeaking()
-    stopListening()
-
-    setIsProcessing(true)
-    try {
-      const response = await axios.post(`${API_URL}/interview/end`, {
-        session_id: sessionId
-      })
-
-      setFinalScore(response.data.score)
-      setFeedback(response.data.feedback)
-      setInterviewState('completed')
-    } catch (error) {
-      console.error('Error ending interview:', error)
-      alert('Failed to end interview')
-    } finally {
-      setIsProcessing(false)
     }
   }
 
