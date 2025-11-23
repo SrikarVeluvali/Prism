@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { FiLoader, FiCheckCircle, FiCode, FiFileText, FiList, FiRefreshCw } from 'react-icons/fi'
 import axios from 'axios'
 import ReactMarkdown from 'react-markdown';
@@ -18,10 +18,40 @@ function MockTest({ documents, selectedDocIds, notebookId }) {
   const [numReorder, setNumReorder] = useState(2)
   const [difficulty, setDifficulty] = useState('medium')
   const [programmingLanguage, setProgrammingLanguage] = useState('python')
+  const [useReadProgress, setUseReadProgress] = useState(false) // Limit to read pages (default: disabled)
+  const [readingProgress, setReadingProgress] = useState({})
 
   // Drag state
   const [draggedItem, setDraggedItem] = useState(null)
   const [draggedIndex, setDraggedIndex] = useState(null)
+
+  // Fetch reading progress for selected documents
+  useEffect(() => {
+    const fetchReadingProgress = async () => {
+      if (selectedDocIds.length > 0 && useReadProgress) {
+        try {
+          const token = localStorage.getItem('token')
+          const progressData = {}
+
+          for (const docId of selectedDocIds) {
+            const response = await axios.get(
+              `${API_URL}/reading-progress/${notebookId}/${docId}`,
+              { headers: { Authorization: `Bearer ${token}` } }
+            )
+            if (response.data.has_progress && response.data.completed_pages) {
+              progressData[docId] = response.data.completed_pages
+            }
+          }
+
+          setReadingProgress(progressData)
+        } catch (error) {
+          console.error('Error fetching reading progress:', error)
+        }
+      }
+    }
+
+    fetchReadingProgress()
+  }, [selectedDocIds, useReadProgress, notebookId])
 
   const generateTest = async () => {
     if (documents.length === 0) {
@@ -29,9 +59,20 @@ function MockTest({ documents, selectedDocIds, notebookId }) {
       return
     }
 
+    // Collect completed pages if useReadProgress is enabled
+    let pageNumbers = null
+    if (useReadProgress && Object.keys(readingProgress).length > 0) {
+      pageNumbers = Object.values(readingProgress).flat()
+
+      if (pageNumbers.length === 0) {
+        alert('You haven\'t read any pages yet. Disable "Limit to pages I\'ve read" or read some content first.')
+        return
+      }
+    }
+
     setTestState('loading')
     try {
-      const response = await axios.post(`${API_URL}/generate-mock-test`, {
+      const requestData = {
         notebook_id: notebookId,
         document_ids: selectedDocIds.length > 0 ? selectedDocIds : null,
         num_theory: numTheory,
@@ -39,7 +80,14 @@ function MockTest({ documents, selectedDocIds, notebookId }) {
         num_reorder: numReorder,
         difficulty: difficulty,
         programming_language: programmingLanguage
-      })
+      }
+
+      // Add page_numbers if limiting to read pages
+      if (pageNumbers && pageNumbers.length > 0) {
+        requestData.page_numbers = pageNumbers
+      }
+
+      const response = await axios.post(`${API_URL}/generate-mock-test`, requestData)
 
       setTest(response.data)
 
@@ -219,7 +267,30 @@ function MockTest({ documents, selectedDocIds, notebookId }) {
                 <option value="easy">Easy</option>
                 <option value="medium">Medium</option>
                 <option value="hard">Hard</option>
+                <option value="mixed">Mixed (Easy, Medium & Hard)</option>
               </select>
+            </div>
+
+            <div className="config-group" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '8px' }}>
+              <label style={{ marginBottom: 0, cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                <input
+                  type="checkbox"
+                  checked={useReadProgress}
+                  onChange={(e) => setUseReadProgress(e.target.checked)}
+                  style={{ marginRight: '8px' }}
+                />
+                Limit to pages I've read
+              </label>
+              {useReadProgress && Object.keys(readingProgress).length > 0 && (
+                <span style={{ fontSize: '12px', color: 'var(--accent-primary)', marginLeft: '26px' }}>
+                  ✓ {Object.values(readingProgress).flat().length} pages available
+                </span>
+              )}
+              {useReadProgress && Object.keys(readingProgress).length === 0 && (
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)', marginLeft: '26px' }}>
+                  No reading progress yet. Open a PDF in View section to start tracking.
+                </span>
+              )}
             </div>
           </div>
 
@@ -275,6 +346,25 @@ function MockTest({ documents, selectedDocIds, notebookId }) {
                   <div className="question-header">
                     <span className="question-number">Question {index + 1}</span>
                     <span className="question-topic">{question.topic}</span>
+                    {question.difficulty && (
+                      <span
+                        className={`difficulty-badge ${question.difficulty.toLowerCase()}`}
+                        style={{
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          fontSize: '11px',
+                          fontWeight: 'bold',
+                          textTransform: 'uppercase',
+                          backgroundColor:
+                            question.difficulty.toLowerCase() === 'easy' ? '#10b981' :
+                            question.difficulty.toLowerCase() === 'medium' ? '#f59e0b' :
+                            '#ef4444',
+                          color: 'white'
+                        }}
+                      >
+                        {question.difficulty}
+                      </span>
+                    )}
                   </div>
                   <p className="question-text">{question.question}</p>
                   <textarea
@@ -306,6 +396,25 @@ function MockTest({ documents, selectedDocIds, notebookId }) {
                   <div className="question-header">
                     <span className="question-number">Coding {index + 1}</span>
                     <span className="question-topic">{question.topic}</span>
+                    {question.difficulty && (
+                      <span
+                        className={`difficulty-badge ${question.difficulty.toLowerCase()}`}
+                        style={{
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          fontSize: '11px',
+                          fontWeight: 'bold',
+                          textTransform: 'uppercase',
+                          backgroundColor:
+                            question.difficulty.toLowerCase() === 'easy' ? '#10b981' :
+                            question.difficulty.toLowerCase() === 'medium' ? '#f59e0b' :
+                            '#ef4444',
+                          color: 'white'
+                        }}
+                      >
+                        {question.difficulty}
+                      </span>
+                    )}
                   </div>
                   <p className="question-text">{question.question}</p>
 
@@ -358,6 +467,25 @@ function MockTest({ documents, selectedDocIds, notebookId }) {
                   <div className="question-header">
                     <span className="question-number">Reorder {qIndex + 1}</span>
                     <span className="question-topic">{question.topic}</span>
+                    {question.difficulty && (
+                      <span
+                        className={`difficulty-badge ${question.difficulty.toLowerCase()}`}
+                        style={{
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          fontSize: '11px',
+                          fontWeight: 'bold',
+                          textTransform: 'uppercase',
+                          backgroundColor:
+                            question.difficulty.toLowerCase() === 'easy' ? '#10b981' :
+                            question.difficulty.toLowerCase() === 'medium' ? '#f59e0b' :
+                            '#ef4444',
+                          color: 'white'
+                        }}
+                      >
+                        {question.difficulty}
+                      </span>
+                    )}
                   </div>
                   <p className="question-text">{question.question}</p>
                   <p className="reorder-instruction">Drag and drop to reorder</p>
@@ -411,6 +539,9 @@ function MockTest({ documents, selectedDocIds, notebookId }) {
             </div>
 
             <h2>Mock Test Results</h2>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '8px', fontStyle: 'italic' }}>
+              Weighted scoring: Hard questions contribute 2x, Medium 1.5x, Easy 1x to your final score
+            </p>
           </div>
 
           <div className="results-analysis">
@@ -425,7 +556,27 @@ function MockTest({ documents, selectedDocIds, notebookId }) {
               {results.theory_results.map((result, index) => (
                 <div key={index} className="result-card">
                   <div className="result-card-header">
-                    <span>Question {index + 1}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span>Question {index + 1}</span>
+                      {result.difficulty && (
+                        <span
+                          style={{
+                            padding: '2px 6px',
+                            borderRadius: '3px',
+                            fontSize: '10px',
+                            fontWeight: 'bold',
+                            textTransform: 'uppercase',
+                            backgroundColor:
+                              result.difficulty.toLowerCase() === 'easy' ? '#10b981' :
+                              result.difficulty.toLowerCase() === 'medium' ? '#f59e0b' :
+                              '#ef4444',
+                            color: 'white'
+                          }}
+                        >
+                          {result.difficulty}
+                        </span>
+                      )}
+                    </div>
                     <span
                       className="result-score"
                       style={{ color: getScoreColor(result.score) }}
@@ -478,7 +629,27 @@ function MockTest({ documents, selectedDocIds, notebookId }) {
               {results.coding_results.map((result, index) => (
                 <div key={index} className="result-card">
                   <div className="result-card-header">
-                    <span>Coding {index + 1}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span>Coding {index + 1}</span>
+                      {result.difficulty && (
+                        <span
+                          style={{
+                            padding: '2px 6px',
+                            borderRadius: '3px',
+                            fontSize: '10px',
+                            fontWeight: 'bold',
+                            textTransform: 'uppercase',
+                            backgroundColor:
+                              result.difficulty.toLowerCase() === 'easy' ? '#10b981' :
+                              result.difficulty.toLowerCase() === 'medium' ? '#f59e0b' :
+                              '#ef4444',
+                            color: 'white'
+                          }}
+                        >
+                          {result.difficulty}
+                        </span>
+                      )}
+                    </div>
                     <span
                       className="result-score"
                       style={{ color: getScoreColor(result.score) }}
@@ -530,7 +701,27 @@ function MockTest({ documents, selectedDocIds, notebookId }) {
               {results.reorder_results.map((result, index) => (
                 <div key={index} className="result-card">
                   <div className="result-card-header">
-                    <span>Reorder {index + 1}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span>Reorder {index + 1}</span>
+                      {result.difficulty && (
+                        <span
+                          style={{
+                            padding: '2px 6px',
+                            borderRadius: '3px',
+                            fontSize: '10px',
+                            fontWeight: 'bold',
+                            textTransform: 'uppercase',
+                            backgroundColor:
+                              result.difficulty.toLowerCase() === 'easy' ? '#10b981' :
+                              result.difficulty.toLowerCase() === 'medium' ? '#f59e0b' :
+                              '#ef4444',
+                            color: 'white'
+                          }}
+                        >
+                          {result.difficulty}
+                        </span>
+                      )}
+                    </div>
                     <span
                       className="result-score"
                       style={{ color: getScoreColor(result.score) }}

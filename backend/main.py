@@ -67,6 +67,8 @@ from database import (
     doomscroll_folders_collection,
     analysis_cache_collection,
     pdf_questions_collection,
+    reading_progress_collection,
+    bookmarks_collection,
     init_db
 )
 
@@ -225,6 +227,7 @@ class QuizGenerateRequest(BaseModel):
     document_ids: Optional[List[str]] = None  # Specific documents (None = all)
     num_questions: int = 5  # Number of MCQ questions
     difficulty: str = "medium"  # easy, medium, hard
+    page_numbers: Optional[List[int]] = None  # Limit to specific pages (for reading progress)
 
 class QuizAnswer(BaseModel):
     """Model for a single quiz answer"""
@@ -248,6 +251,7 @@ class MockTestGenerateRequest(BaseModel):
     num_reorder: int = 2  # Number of reordering questions
     difficulty: str = "medium"  # easy, medium, hard
     programming_language: str = "python"  # For coding questions
+    page_numbers: Optional[List[int]] = None  # Limit to specific pages (for reading progress)
 
 class TheoryAnswer(BaseModel):
     """Model for theory question answer"""
@@ -338,6 +342,31 @@ class YouTubeURLSubmit(BaseModel):
 class DocumentAnalyzeRequest(BaseModel):
     """Model for requesting document analysis"""
     question_types: List[str] = ["2-marks", "5-marks", "10-marks"]  # Types of questions to generate
+
+
+# ==================== READING PROGRESS & BOOKMARKS MODELS ====================
+
+class ReadingProgressUpdate(BaseModel):
+    """Model for updating reading progress"""
+    document_id: str
+    notebook_id: str
+    current_page: int
+    total_pages: int
+    time_spent_seconds: Optional[int] = 0
+    mark_completed: Optional[bool] = False  # Mark current page as completed
+
+class BookmarkCreate(BaseModel):
+    """Model for creating a bookmark"""
+    notebook_id: str
+    document_id: str
+    page_number: int
+    title: Optional[str] = None
+    note: Optional[str] = None
+
+class BookmarkUpdate(BaseModel):
+    """Model for updating a bookmark"""
+    title: Optional[str] = None
+    note: Optional[str] = None
 
 
 # ==================== HELPER FUNCTIONS ====================
@@ -1098,15 +1127,31 @@ async def upload_documents(notebook_id: str, files: List[UploadFile] = File(...)
                 content = await file.read()
                 file_obj = io.BytesIO(content)
 
-                # Extract text using processor
-                text = processor.extract_text(file_obj)
-
-                # Get metadata
-                file_obj.seek(0)
+                # Get metadata first
                 metadata = processor.get_metadata(file_obj)
 
-                # Create chunks
-                chunks = processor.chunk_text(text)
+                # Extract text - use page-based extraction for PDFs
+                file_obj.seek(0)
+                chunks = []
+                chunks_with_pages = []  # List of (chunk_text, page_number) tuples
+
+                if file_type == "pdf" and hasattr(processor, 'extract_text_with_pages'):
+                    # Use page-based extraction for PDFs
+                    pages_data = processor.extract_text_with_pages(file_obj)
+
+                    # Chunk each page separately while tracking page numbers
+                    for page_num, page_text in pages_data:
+                        page_chunks = processor.chunk_text(page_text)
+                        for chunk in page_chunks:
+                            chunks.append(chunk)
+                            chunks_with_pages.append((chunk, page_num))
+                else:
+                    # For non-PDF files, use standard extraction
+                    file_obj.seek(0)
+                    text = processor.extract_text(file_obj)
+                    chunks = processor.chunk_text(text)
+                    # No page tracking for non-PDF files
+                    chunks_with_pages = [(chunk, None) for chunk in chunks]
 
                 # Generate document ID
                 doc_id = str(uuid.uuid4())
@@ -1115,6 +1160,9 @@ async def upload_documents(notebook_id: str, files: List[UploadFile] = File(...)
                 file_path = notebook_dir / f"{doc_id}{file_ext}"
                 with open(file_path, "wb") as f:
                     f.write(content)
+
+                # Add total_pages to metadata for easy access
+                total_pages = metadata.get("num_pages", 0)
 
                 # Store document metadata in MongoDB
                 doc_data = {
@@ -1126,26 +1174,32 @@ async def upload_documents(notebook_id: str, files: List[UploadFile] = File(...)
                     "chunks_count": len(chunks),
                     "chunks": chunks,
                     "file_path": str(file_path),
+                    "total_pages": total_pages,  # Store total pages for quick access
                     "metadata": metadata
                 }
                 await documents_collection.insert_one(doc_data)
 
-                # Process and store chunks in Pinecone
+                # Process and store chunks in Pinecone with page tracking
                 vectors = []
-                for i, chunk in enumerate(chunks):
+                for i, (chunk, page_num) in enumerate(chunks_with_pages):
                     embedding = get_embedding(chunk)
                     if embedding:
+                        vector_metadata = {
+                            "doc_id": doc_id,
+                            "notebook_id": notebook_id,
+                            "filename": file.filename,
+                            "file_type": file_type,
+                            "chunk_index": i,
+                            "text": chunk
+                        }
+                        # Add page_number only for PDFs
+                        if page_num is not None:
+                            vector_metadata["page_number"] = page_num
+
                         vectors.append({
                             "id": f"{doc_id}_{i}",
                             "values": embedding,
-                            "metadata": {
-                                "doc_id": doc_id,
-                                "notebook_id": notebook_id,
-                                "filename": file.filename,
-                                "file_type": file_type,
-                                "chunk_index": i,
-                                "text": chunk
-                            }
+                            "metadata": vector_metadata
                         })
 
                 # Upsert to Pinecone in batches
@@ -1550,6 +1604,134 @@ async def delete_document(doc_id: str, current_user: TokenData = Depends(get_cur
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/validate-document/{doc_id}")
+async def validate_document(doc_id: str, current_user: TokenData = Depends(get_current_user)):
+    """Validate a document for potential issues and quality problems"""
+    try:
+        # Find the document
+        doc = await documents_collection.find_one({"doc_id": doc_id})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        notebook_id = doc["notebook_id"]
+
+        # Verify notebook ownership
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(notebook_id),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        # Only support PDF for validation
+        if doc.get("file_type") != "pdf":
+            return {
+                "issues": [],
+                "message": "Validation is currently only supported for PDF documents"
+            }
+
+        # Get the document content from vectors
+        # Use the correct embedding dimension (768 for all-mpnet-base-v2)
+        results = index.query(
+            vector=[0.0] * 768,  # Dummy vector with correct dimension
+            filter={"doc_id": doc_id},
+            top_k=10000,
+            include_metadata=True
+        )
+
+        if not results.matches:
+            return {
+                "issues": [{
+                    "type": "No Content",
+                    "description": "No content found in document. The document may be empty or failed to process.",
+                    "severity": "high",
+                    "location": "Document"
+                }]
+            }
+
+        # Collect all text chunks
+        all_chunks = [match.metadata.get('text', '') for match in results.matches]
+        total_text = " ".join(all_chunks)
+
+        # Analyze with AI
+        validation_prompt = f"""Analyze the following document content and identify potential issues. Perform both TECHNICAL and CONTENT validation:
+
+TECHNICAL VALIDATION - Look for:
+1. OCR errors (garbled text, unusual characters, repeated characters)
+2. Formatting issues (missing spaces, broken sentences, improper line breaks)
+3. Incomplete content (truncated sentences, missing sections)
+4. Data quality problems (inconsistent formatting, unusual patterns)
+5. Readability issues (very short fragments, incomprehensible text)
+
+CONTENT VALIDATION - Look for:
+1. Factual accuracy issues (incorrect information, outdated facts, misleading statements)
+2. Logical inconsistencies (contradictions, flawed reasoning, unsupported claims)
+3. Missing context (incomplete explanations, undefined terms, missing prerequisites)
+4. Poor structure (disorganized content, unclear progression, missing transitions)
+5. Educational quality (overly vague explanations, missing examples, inadequate depth)
+6. Bias or misleading content (one-sided views, unsubstantiated opinions presented as facts)
+7. Citation or reference issues (missing sources for claims, unreferenced data)
+
+Document content sample (first 5000 characters):
+{total_text[:5000]}
+
+Total document length: {len(total_text)} characters
+Number of chunks: {len(all_chunks)}
+
+Return a JSON array of issues found. Each issue should have:
+- type: Brief category name (e.g., "OCR Error", "Factual Inaccuracy", "Missing Context", "Poor Structure")
+- description: Detailed description of the issue with specific examples if possible
+- severity: "high" (critical issues affecting understanding/accuracy), "medium" (notable issues that should be addressed), or "low" (minor issues)
+- location: Where the issue was found (e.g., "Throughout document", "Beginning section", "Mathematical formulas")
+
+If NO issues are found, return an empty array: []
+
+IMPORTANT: Return ONLY the JSON array, no additional text."""
+
+        chat_completion = groq_client.chat.completions.create(
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a document quality validator. Respond with ONLY valid JSON arrays."
+                },
+                {
+                    "role": "user",
+                    "content": validation_prompt
+                }
+            ],
+            model="llama-3.3-70b-versatile",
+            temperature=0.3,
+            max_tokens=3000
+        )
+
+        response_text = chat_completion.choices[0].message.content.strip()
+
+        # Extract JSON from response
+        json_match = re.search(r'\[[\s\S]*\]', response_text)
+        if json_match:
+            response_text = json_match.group()
+
+        try:
+            issues = json.loads(response_text)
+            if not isinstance(issues, list):
+                issues = []
+        except json.JSONDecodeError:
+            # If parsing fails, return no issues
+            issues = []
+
+        return {
+            "issues": issues,
+            "total_chunks": len(all_chunks),
+            "total_characters": len(total_text)
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error validating document: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/documents/{notebook_id}/{doc_id}/analyze")
 async def analyze_document(
     notebook_id: str,
@@ -1785,6 +1967,8 @@ async def generate_quiz(request: QuizGenerateRequest, current_user: TokenData = 
         filter_dict = {"notebook_id": request.notebook_id}
         if request.document_ids:
             filter_dict["doc_id"] = {"$in": request.document_ids}
+        if request.page_numbers:
+            filter_dict["page_number"] = {"$in": request.page_numbers}
 
         # Get random chunks from documents
         # We'll query multiple times with different random embeddings to get diverse content
@@ -1819,6 +2003,18 @@ async def generate_quiz(request: QuizGenerateRequest, current_user: TokenData = 
         context = "\n\n".join([chunk['text'] for chunk in selected_chunks])
         print(f"Retrieved {len(selected_chunks)} chunks for quiz generation")
 
+        # Determine difficulty instruction based on mixed vs fixed difficulty
+        if request.difficulty.lower() == "mixed":
+            difficulty_instruction = """4. Difficulty level: MIXED - Randomly distribute difficulties across all questions. Each question should have "difficulty" set to either "easy", "medium", or "hard".
+   - Aim for a balanced mix (roughly equal distribution)
+   - Hard questions should test deeper understanding and analysis
+   - Medium questions should test solid comprehension
+   - Easy questions should test basic recall"""
+            difficulty_field = '"difficulty": "easy" or "medium" or "hard",'
+        else:
+            difficulty_instruction = f"4. Difficulty level: {request.difficulty} - ALL questions should have the same difficulty level"
+            difficulty_field = f'"difficulty": "{request.difficulty}",'
+
         # Generate quiz using Groq
         prompt = f"""Based on the following content from educational documents, generate {request.num_questions} multiple-choice questions (MCQs).
 
@@ -1829,7 +2025,7 @@ Requirements:
 1. Generate exactly {request.num_questions} questions
 2. Each question should have 4 options (A, B, C, D)
 3. Questions should test understanding of the content
-4. Difficulty level: {request.difficulty}
+{difficulty_instruction}
 5. Indicate the correct answer for each question
 6. Questions should be diverse and cover different topics from the content
 
@@ -1840,7 +2036,8 @@ Format your response as a JSON array with this structure:
     "options": ["Option A", "Option B", "Option C", "Option D"],
     "correct_answer": 0,
     "explanation": "Brief explanation of why this is correct",
-    "topic": "Main topic this question covers"
+    "topic": "Main topic this question covers",
+    {difficulty_field}
   }}
 ]
 
@@ -1881,15 +2078,19 @@ IMPORTANT: Return ONLY the JSON array, no additional text."""
             "questions": questions,
             "created_at": datetime.now().isoformat(),
             "document_ids": request.document_ids,
-            "num_questions": len(questions)
+            "num_questions": len(questions),
+            "notebook_id": request.notebook_id,
+            "user_id": current_user.user_id,
+            "difficulty": request.difficulty
         }
 
-        # Return questions without correct answers
+        # Return questions without correct answers (but include difficulty for display)
         questions_for_user = [
             {
                 "question": q["question"],
                 "options": q["options"],
-                "topic": q.get("topic", "General")
+                "topic": q.get("topic", "General"),
+                "difficulty": q.get("difficulty", request.difficulty)
             }
             for q in questions
         ]
@@ -1915,18 +2116,34 @@ async def submit_quiz(request: QuizSubmitRequest):
         quiz = quizzes_store[request.quiz_id]
         questions = quiz["questions"]
 
-        # Calculate score
+        # Calculate score with difficulty-based weighting
+        # Difficulty weights: easy=1.0, medium=1.5, hard=2.0
+        def get_difficulty_weight(difficulty):
+            weights = {
+                "easy": 1.0,
+                "medium": 1.5,
+                "hard": 2.0
+            }
+            return weights.get(difficulty.lower() if difficulty else "medium", 1.5)
+
         correct_count = 0
         total_questions = len(questions)
         results = []
         topic_performance = {}
+        weighted_score_sum = 0
+        total_weight = 0
 
         for answer in request.answers:
             question = questions[answer.question_index]
             is_correct = answer.selected_option == question["correct_answer"]
+            difficulty = question.get("difficulty", quiz.get("difficulty", "medium"))
+            weight = get_difficulty_weight(difficulty)
 
+            # Add to weighted score
+            total_weight += weight
             if is_correct:
                 correct_count += 1
+                weighted_score_sum += weight
 
             topic = question.get("topic", "General")
             if topic not in topic_performance:
@@ -1943,10 +2160,12 @@ async def submit_quiz(request: QuizSubmitRequest):
                 "correct_answer": question["correct_answer"],
                 "is_correct": is_correct,
                 "explanation": question.get("explanation", ""),
-                "topic": topic
+                "topic": topic,
+                "difficulty": difficulty
             })
 
-        score_percentage = (correct_count / total_questions) * 100
+        # Calculate weighted score percentage
+        score_percentage = (weighted_score_sum / total_weight * 100) if total_weight > 0 else 0
 
         # Generate analysis using Groq
         weak_topics = [
@@ -1991,6 +2210,24 @@ Keep the response concise, encouraging, and actionable."""
 
         analysis = chat_completion.choices[0].message.content
 
+        # Save quiz result to database
+        quiz_result = {
+            "user_id": quiz["user_id"],
+            "notebook_id": quiz["notebook_id"],
+            "quiz_id": request.quiz_id,
+            "score": correct_count,
+            "total_questions": total_questions,
+            "score_percentage": score_percentage,
+            "results": results,
+            "topic_performance": topic_performance,
+            "difficulty": quiz.get("difficulty", "medium"),
+            "weak_topics": weak_topics,
+            "strong_topics": strong_topics,
+            "analysis": analysis,
+            "created_at": datetime.now().isoformat()
+        }
+        await quiz_results_collection.insert_one(quiz_result)
+
         return {
             "quiz_id": request.quiz_id,
             "score": correct_count,
@@ -2003,6 +2240,38 @@ Keep the response concise, encouraging, and actionable."""
             "strong_topics": strong_topics
         }
 
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/quiz-history/{notebook_id}")
+async def get_quiz_history(notebook_id: str, current_user: TokenData = Depends(get_current_user)):
+    """Get all quiz attempts for a notebook"""
+    try:
+        # Verify notebook ownership
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(notebook_id),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
+        # Fetch all quiz results for this notebook
+        quiz_results = []
+        async for result in quiz_results_collection.find(
+            {"notebook_id": notebook_id}
+        ).sort("created_at", -1):  # Most recent first
+            # Remove MongoDB _id for JSON serialization
+            result.pop("_id", None)
+            quiz_results.append(result)
+
+        return {
+            "notebook_id": notebook_id,
+            "total_quizzes": len(quiz_results),
+            "quiz_history": quiz_results
+        }
+
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -2029,6 +2298,8 @@ async def generate_mock_test(request: MockTestGenerateRequest, current_user: Tok
         filter_dict = {"notebook_id": request.notebook_id}
         if request.document_ids:
             filter_dict["doc_id"] = {"$in": request.document_ids}
+        if request.page_numbers:
+            filter_dict["page_number"] = {"$in": request.page_numbers}
 
         # Get diverse chunks from documents
         all_chunks = []
@@ -2075,6 +2346,18 @@ async def generate_mock_test(request: MockTestGenerateRequest, current_user: Tok
 
         func_example = lang_examples.get(request.programming_language.lower(), 'def function_name(params):')
 
+        # Determine difficulty instruction based on mixed vs fixed difficulty
+        if request.difficulty.lower() == "mixed":
+            difficulty_instruction = """7. Difficulty: MIXED - Randomly distribute difficulties across all questions. Each question should have "difficulty" set to either "easy", "medium", or "hard".
+   - Aim for a balanced mix (roughly equal distribution)
+   - Hard questions should be more conceptually challenging or require deeper analysis
+   - Medium questions should test solid understanding
+   - Easy questions should test basic recall and simple concepts"""
+            difficulty_example = '"easy" or "medium" or "hard"'
+        else:
+            difficulty_instruction = f"7. Difficulty: {request.difficulty} - ALL questions should have the same difficulty level"
+            difficulty_example = f'"{request.difficulty}"'
+
         prompt = f"""Based on the following educational content, generate a comprehensive mock test.
 
 Content:
@@ -2087,7 +2370,7 @@ Generate a JSON object with the following structure:
       "question": "Theory question text?",
       "topic": "Topic name",
       "expected_points": ["key point 1", "key point 2"],
-      "difficulty": "{request.difficulty}"
+      "difficulty": {difficulty_example}
     }}
   ],
   "coding_questions": [
@@ -2099,7 +2382,7 @@ Generate a JSON object with the following structure:
       "test_cases": [
         {{"input": "example input", "expected_output": "expected result"}}
       ],
-      "difficulty": "{request.difficulty}"
+      "difficulty": {difficulty_example}
     }}
   ],
   "reorder_questions": [
@@ -2108,7 +2391,7 @@ Generate a JSON object with the following structure:
       "topic": "Topic name",
       "items": ["Step 1", "Step 2", "Step 3", "Step 4"],
       "correct_order": ["Step 2", "Step 1", "Step 4", "Step 3"],
-      "difficulty": "{request.difficulty}"
+      "difficulty": {difficulty_example}
     }}
   ]
 }}
@@ -2120,7 +2403,7 @@ Requirements:
 4. Theory questions should test understanding and ask for explanations
 5. Coding questions MUST be in {request.programming_language.upper()} with appropriate syntax and function signatures
 6. Reorder questions should have items shuffled (not in correct order), make sure not to add obvious hints to these reordering questions.)
-7. Difficulty: {request.difficulty}
+{difficulty_instruction}
 
 IMPORTANT: Return ONLY the JSON object, no additional text."""
 
@@ -2156,21 +2439,25 @@ IMPORTANT: Return ONLY the JSON object, no additional text."""
         mock_tests_store[test_id] = {
             "id": test_id,
             "user_id": current_user.user_id,
+            "notebook_id": request.notebook_id,
             "theory_questions": test_data.get("theory_questions", []),
             "coding_questions": test_data.get("coding_questions", []) if has_code else [],
             "reorder_questions": test_data.get("reorder_questions", []),
             "created_at": datetime.now().isoformat(),
             "document_ids": request.document_ids,
-            "has_code": has_code
+            "has_code": has_code,
+            "difficulty": request.difficulty,
+            "programming_language": request.programming_language
         }
 
-        # Return questions without answers
+        # Return questions without answers (but include difficulty for display purposes)
         return {
             "test_id": test_id,
             "theory_questions": [
                 {
                     "question": q["question"],
-                    "topic": q.get("topic", "General")
+                    "topic": q.get("topic", "General"),
+                    "difficulty": q.get("difficulty", request.difficulty)
                 }
                 for q in test_data.get("theory_questions", [])
             ],
@@ -2180,7 +2467,8 @@ IMPORTANT: Return ONLY the JSON object, no additional text."""
                     "topic": q.get("topic", "Coding"),
                     "function_signature": q.get("function_signature", ""),
                     "language": q.get("language", "python"),
-                    "test_cases": [{"input": tc["input"]} for tc in q.get("test_cases", [])]
+                    "test_cases": [{"input": tc["input"]} for tc in q.get("test_cases", [])],
+                    "difficulty": q.get("difficulty", request.difficulty)
                 }
                 for q in (test_data.get("coding_questions", []) if has_code else [])
             ],
@@ -2188,7 +2476,8 @@ IMPORTANT: Return ONLY the JSON object, no additional text."""
                 {
                     "question": q["question"],
                     "topic": q.get("topic", "General"),
-                    "items": q["items"]  # Already shuffled by AI
+                    "items": q["items"],  # Already shuffled by AI
+                    "difficulty": q.get("difficulty", request.difficulty)
                 }
                 for q in test_data.get("reorder_questions", [])
             ],
@@ -2302,7 +2591,8 @@ CRITICAL: Return ONLY the JSON object. No explanations before or after."""
                 "feedback": evaluation["feedback"],
                 "covered_points": evaluation.get("covered_points", []),
                 "missing_points": evaluation.get("missing_points", []),
-                "topic": question.get("topic", "General")
+                "topic": question.get("topic", "General"),
+                "difficulty": question.get("difficulty", test.get("difficulty", "medium"))
             })
 
         # Evaluate coding questions
@@ -2396,7 +2686,8 @@ CRITICAL: Return ONLY the JSON object. No explanations before or after."""
                 "code_quality": evaluation.get("code_quality", ""),
                 "feedback": evaluation["feedback"],
                 "suggestions": evaluation.get("suggestions", []),
-                "topic": question.get("topic", "Coding")
+                "topic": question.get("topic", "Coding"),
+                "difficulty": question.get("difficulty", test.get("difficulty", "medium"))
             })
 
         # Evaluate reorder questions
@@ -2421,12 +2712,27 @@ CRITICAL: Return ONLY the JSON object. No explanations before or after."""
                 "score": score,
                 "correct_positions": correct_count,
                 "total_items": len(correct_order),
-                "topic": question.get("topic", "General")
+                "topic": question.get("topic", "General"),
+                "difficulty": question.get("difficulty", test.get("difficulty", "medium"))
             })
 
-        # Calculate overall score
-        all_scores = [r["score"] for r in theory_results + coding_results + reorder_results]
-        overall_score = sum(all_scores) / len(all_scores) if all_scores else 0
+        # Calculate overall score with difficulty-based weighting
+        # Difficulty weights: easy=1.0, medium=1.5, hard=2.0
+        def get_difficulty_weight(difficulty):
+            weights = {
+                "easy": 1.0,
+                "medium": 1.5,
+                "hard": 2.0
+            }
+            return weights.get(difficulty.lower() if difficulty else "medium", 1.5)
+
+        all_results = theory_results + coding_results + reorder_results
+        if all_results:
+            weighted_sum = sum(r["score"] * get_difficulty_weight(r.get("difficulty", "medium")) for r in all_results)
+            total_weight = sum(get_difficulty_weight(r.get("difficulty", "medium")) for r in all_results)
+            overall_score = weighted_sum / total_weight if total_weight > 0 else 0
+        else:
+            overall_score = 0
 
         print(f"Evaluation complete. Overall score: {overall_score:.1f}%")
 
@@ -2443,11 +2749,29 @@ CRITICAL: Return ONLY the JSON object. No explanations before or after."""
             scores = topic_performance[topic]["scores"]
             topic_performance[topic]["average"] = sum(scores) / len(scores)
 
-        # Generate overall analysis
-        if all_scores:
-            theory_avg = sum(r['score'] for r in theory_results) / len(theory_results) if theory_results else 0
-            coding_avg = sum(r['score'] for r in coding_results) / len(coding_results) if coding_results else 0
-            reorder_avg = sum(r['score'] for r in reorder_results) / len(reorder_results) if reorder_results else 0
+        # Generate overall analysis with weighted averages
+        if all_results:
+            # Calculate weighted averages for each question type
+            if theory_results:
+                theory_weighted_sum = sum(r['score'] * get_difficulty_weight(r.get('difficulty', 'medium')) for r in theory_results)
+                theory_total_weight = sum(get_difficulty_weight(r.get('difficulty', 'medium')) for r in theory_results)
+                theory_avg = theory_weighted_sum / theory_total_weight if theory_total_weight > 0 else 0
+            else:
+                theory_avg = 0
+
+            if coding_results:
+                coding_weighted_sum = sum(r['score'] * get_difficulty_weight(r.get('difficulty', 'medium')) for r in coding_results)
+                coding_total_weight = sum(get_difficulty_weight(r.get('difficulty', 'medium')) for r in coding_results)
+                coding_avg = coding_weighted_sum / coding_total_weight if coding_total_weight > 0 else 0
+            else:
+                coding_avg = 0
+
+            if reorder_results:
+                reorder_weighted_sum = sum(r['score'] * get_difficulty_weight(r.get('difficulty', 'medium')) for r in reorder_results)
+                reorder_total_weight = sum(get_difficulty_weight(r.get('difficulty', 'medium')) for r in reorder_results)
+                reorder_avg = reorder_weighted_sum / reorder_total_weight if reorder_total_weight > 0 else 0
+            else:
+                reorder_avg = 0
 
             analysis_prompt = f"""Provide a comprehensive performance analysis for this mock test:
 
@@ -2479,9 +2803,33 @@ Keep it encouraging but honest and actionable."""
                 overall_analysis = analysis_completion.choices[0].message.content
             except Exception as e:
                 print(f"Error generating overall analysis: {str(e)}")
-                overall_analysis = f"Overall Score: {overall_score:.1f}%. You completed {len(all_scores)} questions. Review the detailed feedback for each question to improve."
+                overall_analysis = f"Overall Score: {overall_score:.1f}%. You completed {len(all_results)} questions. Review the detailed feedback for each question to improve."
         else:
             overall_analysis = "No questions were answered. Please complete the test and submit again."
+
+        # Type-specific averages are already calculated above with weighted scoring
+        # No need to recalculate here - using the weighted averages from the analysis section
+
+        # Save mock test result to database
+        mock_test_result = {
+            "user_id": test["user_id"],
+            "notebook_id": test["notebook_id"],
+            "test_id": request.test_id,
+            "overall_score": overall_score,
+            "theory_avg": theory_avg,
+            "coding_avg": coding_avg,
+            "reorder_avg": reorder_avg,
+            "theory_results": theory_results,
+            "coding_results": coding_results,
+            "reorder_results": reorder_results,
+            "topic_performance": topic_performance,
+            "overall_analysis": overall_analysis,
+            "total_questions": len(theory_results) + len(coding_results) + len(reorder_results),
+            "difficulty": test.get("difficulty", "medium"),
+            "programming_language": test.get("programming_language", "python"),
+            "created_at": datetime.now().isoformat()
+        }
+        await mock_test_results_collection.insert_one(mock_test_result)
 
         return {
             "test_id": request.test_id,
@@ -2504,6 +2852,38 @@ Keep it encouraging but honest and actionable."""
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error evaluating test: {str(e)}")
+
+@app.get("/mock-test-history/{notebook_id}")
+async def get_mock_test_history(notebook_id: str, current_user: TokenData = Depends(get_current_user)):
+    """Get all mock test attempts for a notebook"""
+    try:
+        # Verify notebook ownership
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(notebook_id),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
+        # Fetch all mock test results for this notebook
+        test_results = []
+        async for result in mock_test_results_collection.find(
+            {"notebook_id": notebook_id}
+        ).sort("created_at", -1):  # Most recent first
+            # Remove MongoDB _id for JSON serialization
+            result.pop("_id", None)
+            test_results.append(result)
+
+        return {
+            "notebook_id": notebook_id,
+            "total_tests": len(test_results),
+            "test_history": test_results
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ==================== CHAT HISTORY ENDPOINTS ====================
 
@@ -3029,6 +3409,7 @@ class InterviewStartRequest(BaseModel):
     interview_type: str  # technical, behavioral, mixed
     difficulty: str  # easy, medium, hard
     duration: int  # in minutes
+    page_numbers: Optional[List[int]] = None  # Limit to specific pages (for reading progress)
 
 class InterviewRespondRequest(BaseModel):
     session_id: str
@@ -3051,39 +3432,55 @@ async def start_interview(request: InterviewStartRequest, current_user: TokenDat
 
         session_id = str(uuid.uuid4())
 
-        # Get relevant content from documents in the notebook
-        print(f"[Interview Start] Notebook ID: {request.notebook_id}, Document IDs: {request.document_ids}")
+        # Get relevant content from documents using Pinecone
+        print(f"[Interview Start] Notebook ID: {request.notebook_id}, Document IDs: {request.document_ids}, Page Numbers: {request.page_numbers}")
 
-        documents = []
+        # Build filter for Pinecone query
+        filter_dict = {"notebook_id": request.notebook_id}
         if request.document_ids:
-            # Fetch only selected documents
-            async for doc in documents_collection.find({
-                "notebook_id": request.notebook_id,
-                "doc_id": {"$in": request.document_ids}
-            }):
-                documents.append(doc)
-            print(f"[Interview Start] Found {len(documents)} selected documents")
-        else:
-            # Fetch all documents in the notebook
-            async for doc in documents_collection.find({"notebook_id": request.notebook_id}):
-                documents.append(doc)
-            print(f"[Interview Start] Found {len(documents)} total documents in notebook")
+            filter_dict["doc_id"] = {"$in": request.document_ids}
+        if request.page_numbers:
+            filter_dict["page_number"] = {"$in": request.page_numbers}
 
-        # Build context from document content
+        # Get diverse chunks from documents
+        all_chunks = []
+        num_queries = 10  # Get diverse content for interview context
+
+        for _ in range(num_queries):
+            random_text = f"interview {random.randint(1, 10000)}"
+            query_embedding = embedding_model.encode(random_text).tolist()
+
+            results = index.query(
+                vector=query_embedding,
+                top_k=3,
+                include_metadata=True,
+                filter=filter_dict
+            )
+
+            for match in results.matches:
+                if match.metadata['text'] not in [c['text'] for c in all_chunks]:
+                    all_chunks.append({
+                        'text': match.metadata['text'],
+                        'filename': match.metadata.get('filename', 'Unknown')
+                    })
+
+        # Build context from retrieved chunks
         document_context = ""
-        if documents:
+        if all_chunks:
+            # Group by filename for organized context
+            from collections import defaultdict
+            chunks_by_file = defaultdict(list)
+            for chunk in all_chunks[:15]:  # Limit to 15 chunks
+                chunks_by_file[chunk['filename']].append(chunk['text'])
+
             doc_summaries = []
-            for doc in documents[:5]:  # Limit to first 5 documents
-                filename = doc.get("filename", "Unknown")
-                # Get first few chunks for context
-                chunks = doc.get("chunks", [])[:3]
-                content_preview = " ".join(chunks[:2]) if chunks else ""
-                if content_preview:
-                    doc_summaries.append(f"- {filename}: {content_preview[:200]}...")
+            for filename, texts in chunks_by_file.items():
+                content_preview = " ".join(texts[:2])[:300]
+                doc_summaries.append(f"- {filename}: {content_preview}...")
 
             if doc_summaries:
                 document_context = f"\n\nThe candidate has been studying the following materials:\n" + "\n".join(doc_summaries) + "\n\nUse this context to ask relevant interview questions related to these topics."
-                print(f"[Interview Start] Document context built with {len(doc_summaries)} document summaries")
+                print(f"[Interview Start] Document context built from {len(all_chunks)} chunks across {len(chunks_by_file)} documents")
 
         # Generate initial greeting and first question based on interview type
         if request.interview_type == "technical":
@@ -3134,6 +3531,7 @@ Start the interview with a friendly introduction and ask your first question."""
             "user_id": current_user.user_id,
             "notebook_id": request.notebook_id,
             "document_ids": request.document_ids,
+            "page_numbers": request.page_numbers,
             "interview_type": request.interview_type,
             "difficulty": request.difficulty,
             "duration": request.duration,
@@ -3374,6 +3772,38 @@ Be constructive and specific in your feedback."""
         raise
     except Exception as e:
         print(f"Error ending interview: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/interview-history/{notebook_id}")
+async def get_interview_history(notebook_id: str, current_user: TokenData = Depends(get_current_user)):
+    """Get all interview sessions for a notebook"""
+    try:
+        # Verify notebook ownership
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(notebook_id),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
+        # Fetch all interview sessions for this notebook
+        sessions = []
+        async for session in interview_sessions_collection.find(
+            {"notebook_id": notebook_id}
+        ).sort("created_at", -1):  # Most recent first
+            # Remove MongoDB _id for JSON serialization
+            session.pop("_id", None)
+            sessions.append(session)
+
+        return {
+            "notebook_id": notebook_id,
+            "total_sessions": len(sessions),
+            "interview_history": sessions
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 # ====================================
@@ -3845,6 +4275,322 @@ async def move_card_to_folder(card_id: str, request: DoomscrollMoveCardRequest, 
     except Exception as e:
         print(f"Error moving card: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ====================================
+# Reading Progress Endpoints
+# ====================================
+
+@app.post("/reading-progress")
+async def save_reading_progress(request: ReadingProgressUpdate, current_user: TokenData = Depends(get_current_user)):
+    """Save or update reading progress for a document"""
+    try:
+        # Verify notebook ownership
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(request.notebook_id),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
+        # Calculate completion percentage
+        completion_percentage = 0.0
+
+        # Get existing progress to maintain completed_pages list
+        existing_progress = await reading_progress_collection.find_one({
+            "user_id": current_user.user_id,
+            "document_id": request.document_id
+        })
+
+        completed_pages = existing_progress.get("completed_pages", []) if existing_progress else []
+
+        # Add current page to completed pages if mark_completed is True
+        if request.mark_completed and request.current_page not in completed_pages:
+            completed_pages.append(request.current_page)
+
+        # Calculate completion percentage
+        if request.total_pages > 0:
+            completion_percentage = (len(completed_pages) / request.total_pages) * 100
+
+        # Prepare update document
+        progress_doc = {
+            "user_id": current_user.user_id,
+            "notebook_id": request.notebook_id,
+            "document_id": request.document_id,
+            "current_page": request.current_page,
+            "total_pages": request.total_pages,
+            "completed_pages": completed_pages,
+            "completion_percentage": completion_percentage,
+            "last_read_at": datetime.now(),
+            "updated_at": datetime.now()
+        }
+
+        # Increment time spent if provided
+        if request.time_spent_seconds and request.time_spent_seconds > 0:
+            await reading_progress_collection.update_one(
+                {
+                    "user_id": current_user.user_id,
+                    "document_id": request.document_id
+                },
+                {
+                    "$set": progress_doc,
+                    "$inc": {"time_spent_seconds": request.time_spent_seconds},
+                    "$setOnInsert": {"created_at": datetime.now()}
+                },
+                upsert=True
+            )
+        else:
+            await reading_progress_collection.update_one(
+                {
+                    "user_id": current_user.user_id,
+                    "document_id": request.document_id
+                },
+                {
+                    "$set": progress_doc,
+                    "$setOnInsert": {
+                        "created_at": datetime.now(),
+                        "time_spent_seconds": 0
+                    }
+                },
+                upsert=True
+            )
+
+        return {
+            "success": True,
+            "current_page": request.current_page,
+            "completion_percentage": completion_percentage,
+            "completed_pages_count": len(completed_pages)
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error saving reading progress: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/reading-progress/all/{notebook_id}")
+async def get_all_reading_progress(notebook_id: str, current_user: TokenData = Depends(get_current_user)):
+    """Get reading progress for all documents in a notebook"""
+    try:
+        # Verify notebook ownership
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(notebook_id),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
+        # Fetch all progress for this notebook
+        progress_list = []
+        async for progress in reading_progress_collection.find({
+            "user_id": current_user.user_id,
+            "notebook_id": notebook_id
+        }):
+            progress.pop("_id", None)
+
+            # Fetch document details to get filename
+            document = await documents_collection.find_one({"doc_id": progress["document_id"]})
+            if document:
+                progress["filename"] = document.get("filename", "Unknown")
+            else:
+                progress["filename"] = "Unknown"
+
+            # Count bookmarks for this document
+            bookmarks_count = await bookmarks_collection.count_documents({
+                "user_id": current_user.user_id,
+                "document_id": progress["document_id"]
+            })
+            progress["bookmarks_count"] = bookmarks_count
+
+            progress_list.append(progress)
+
+        # Create a map by document_id for easy lookup
+        progress_map = {p["document_id"]: p for p in progress_list}
+
+        return {
+            "notebook_id": notebook_id,
+            "progress": progress_map
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error fetching all reading progress: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/reading-progress/{notebook_id}/{doc_id}")
+async def get_reading_progress(notebook_id: str, doc_id: str, current_user: TokenData = Depends(get_current_user)):
+    """Get reading progress for a specific document"""
+    try:
+        # Verify notebook ownership
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(notebook_id),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
+        # Fetch progress
+        progress = await reading_progress_collection.find_one({
+            "user_id": current_user.user_id,
+            "document_id": doc_id
+        })
+
+        if not progress:
+            return {
+                "has_progress": False,
+                "current_page": 1,
+                "completion_percentage": 0,
+                "completed_pages": [],
+                "time_spent_seconds": 0
+            }
+
+        progress.pop("_id", None)
+        progress["has_progress"] = True
+        return progress
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error fetching reading progress: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ====================================
+# Bookmarks Endpoints
+# ====================================
+
+@app.post("/bookmarks")
+async def create_bookmark(request: BookmarkCreate, current_user: TokenData = Depends(get_current_user)):
+    """Create a bookmark for a specific page"""
+    try:
+        # Verify notebook ownership
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(request.notebook_id),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
+        # Create bookmark
+        bookmark = {
+            "user_id": current_user.user_id,
+            "notebook_id": request.notebook_id,
+            "document_id": request.document_id,
+            "page_number": request.page_number,
+            "title": request.title or f"Page {request.page_number}",
+            "note": request.note,
+            "created_at": datetime.now()
+        }
+
+        result = await bookmarks_collection.insert_one(bookmark)
+        bookmark["_id"] = str(result.inserted_id)
+
+        return {
+            "success": True,
+            "bookmark_id": str(result.inserted_id),
+            "bookmark": bookmark
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error creating bookmark: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/bookmarks/{notebook_id}/{doc_id}")
+async def get_bookmarks(notebook_id: str, doc_id: str, current_user: TokenData = Depends(get_current_user)):
+    """Get all bookmarks for a specific document"""
+    try:
+        # Verify notebook ownership
+        notebook = await notebooks_collection.find_one({
+            "_id": ObjectId(notebook_id),
+            "user_id": current_user.user_id
+        })
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
+        # Fetch bookmarks
+        bookmarks = []
+        async for bookmark in bookmarks_collection.find({
+            "user_id": current_user.user_id,
+            "document_id": doc_id
+        }).sort("page_number", 1):  # Sort by page number
+            bookmark["_id"] = str(bookmark["_id"])
+            bookmarks.append(bookmark)
+
+        return {
+            "document_id": doc_id,
+            "bookmarks": bookmarks
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error fetching bookmarks: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/bookmarks/{bookmark_id}")
+async def update_bookmark(bookmark_id: str, request: BookmarkUpdate, current_user: TokenData = Depends(get_current_user)):
+    """Update a bookmark's title or note"""
+    try:
+        # Verify bookmark ownership
+        bookmark = await bookmarks_collection.find_one({"_id": ObjectId(bookmark_id)})
+        if not bookmark:
+            raise HTTPException(status_code=404, detail="Bookmark not found")
+
+        if bookmark["user_id"] != current_user.user_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        # Update bookmark
+        update_data = {}
+        if request.title is not None:
+            update_data["title"] = request.title
+        if request.note is not None:
+            update_data["note"] = request.note
+
+        if update_data:
+            await bookmarks_collection.update_one(
+                {"_id": ObjectId(bookmark_id)},
+                {"$set": update_data}
+            )
+
+        return {"success": True}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error updating bookmark: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/bookmarks/{bookmark_id}")
+async def delete_bookmark(bookmark_id: str, current_user: TokenData = Depends(get_current_user)):
+    """Delete a bookmark"""
+    try:
+        # Verify bookmark ownership
+        bookmark = await bookmarks_collection.find_one({"_id": ObjectId(bookmark_id)})
+        if not bookmark:
+            raise HTTPException(status_code=404, detail="Bookmark not found")
+
+        if bookmark["user_id"] != current_user.user_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        # Delete bookmark
+        await bookmarks_collection.delete_one({"_id": ObjectId(bookmark_id)})
+
+        return {"success": True}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error deleting bookmark: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 if __name__ == "__main__":
     import uvicorn

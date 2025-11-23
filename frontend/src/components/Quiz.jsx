@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { FiCheck, FiX, FiRefreshCw, FiLoader, FiAward } from 'react-icons/fi'
 import axios from 'axios'
 import ReactMarkdown from 'react-markdown';
@@ -16,6 +16,8 @@ function Quiz({ documents, selectedDocIds, notebookId }) {
   const [results, setResults] = useState(null)
   const [numQuestions, setNumQuestions] = useState(5)
   const [difficulty, setDifficulty] = useState('medium')
+  const [useReadProgress, setUseReadProgress] = useState(false) // Limit to read pages (default: disabled)
+  const [readingProgress, setReadingProgress] = useState({})
 
   // Notification modal
   const {
@@ -26,20 +28,66 @@ function Quiz({ documents, selectedDocIds, notebookId }) {
     showConfirm
   } = useNotification()
 
+  // Fetch reading progress for selected documents
+  useEffect(() => {
+    const fetchReadingProgress = async () => {
+      if (selectedDocIds.length > 0 && useReadProgress) {
+        try {
+          const token = localStorage.getItem('token')
+          const progressData = {}
+
+          for (const docId of selectedDocIds) {
+            const response = await axios.get(
+              `${API_URL}/reading-progress/${notebookId}/${docId}`,
+              { headers: { Authorization: `Bearer ${token}` } }
+            )
+            if (response.data.has_progress && response.data.completed_pages) {
+              progressData[docId] = response.data.completed_pages
+            }
+          }
+
+          setReadingProgress(progressData)
+        } catch (error) {
+          console.error('Error fetching reading progress:', error)
+        }
+      }
+    }
+
+    fetchReadingProgress()
+  }, [selectedDocIds, useReadProgress, notebookId])
+
   const generateQuiz = async () => {
     if (documents.length === 0) {
       showWarning('No Documents', 'Please upload documents first')
       return
     }
 
+    // Collect completed pages if useReadProgress is enabled
+    let pageNumbers = null
+    if (useReadProgress && Object.keys(readingProgress).length > 0) {
+      pageNumbers = Object.values(readingProgress).flat()
+
+      if (pageNumbers.length === 0) {
+        showWarning('No Read Pages', 'You haven\'t read any pages yet. Disable "Limit to read pages" or read some content first.')
+        return
+      }
+    }
+
     setQuizState('loading')
     try {
-      const response = await axios.post(`${API_URL}/generate-quiz`, {
+      const requestData = {
         notebook_id: notebookId,
         document_ids: selectedDocIds.length > 0 ? selectedDocIds : null,
         num_questions: numQuestions,
         difficulty: difficulty
-      })
+      }
+
+      // Add page_numbers if limiting to read pages
+      if (pageNumbers && pageNumbers.length > 0) {
+        requestData.page_numbers = pageNumbers
+      }
+
+      const response = await axios.post(`${API_URL}/generate-quiz`, requestData)
 
       setQuiz(response.data)
       setAnswers(new Array(response.data.questions.length).fill(null))
@@ -148,7 +196,39 @@ function Quiz({ documents, selectedDocIds, notebookId }) {
                 <option value="easy">Easy</option>
                 <option value="medium">Medium</option>
                 <option value="hard">Hard</option>
+                <option value="mixed">Mixed (Easy, Medium & Hard)</option>
               </select>
+            </div>
+
+            <div className="quiz-option" style={{ position: 'relative', zIndex: 100, pointerEvents: 'auto' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }} onClick={() => setUseReadProgress(!useReadProgress)}>
+                <input
+                  type="checkbox"
+                  checked={useReadProgress}
+                  onChange={(e) => setUseReadProgress(e.target.checked)}
+                  onClick={(e) => e.stopPropagation()}
+                  style={{
+                    width: '18px',
+                    height: '18px',
+                    cursor: 'pointer',
+                    pointerEvents: 'auto',
+                    position: 'relative',
+                    zIndex: 102,
+                    accentColor: 'var(--accent-primary)'
+                  }}
+                />
+                <span style={{ userSelect: 'none' }}>Limit to pages I've read</span>
+              </div>
+              {useReadProgress && Object.keys(readingProgress).length > 0 && (
+                <span style={{ fontSize: '12px', color: 'var(--accent-primary)', marginLeft: '26px' }}>
+                  ✓ {Object.values(readingProgress).flat().length} pages available
+                </span>
+              )}
+              {useReadProgress && Object.keys(readingProgress).length === 0 && (
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)', marginLeft: '26px' }}>
+                  No reading progress yet. Open a PDF in View section to start tracking.
+                </span>
+              )}
             </div>
           </div>
 
@@ -233,7 +313,27 @@ function Quiz({ documents, selectedDocIds, notebookId }) {
         </div>
 
         <div className="quiz-question-card">
-          <div className="quiz-question-topic">{question.topic}</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <div className="quiz-question-topic">{question.topic}</div>
+            {question.difficulty && (
+              <span
+                style={{
+                  padding: '2px 8px',
+                  borderRadius: '4px',
+                  fontSize: '11px',
+                  fontWeight: 'bold',
+                  textTransform: 'uppercase',
+                  backgroundColor:
+                    question.difficulty.toLowerCase() === 'easy' ? '#10b981' :
+                    question.difficulty.toLowerCase() === 'medium' ? '#f59e0b' :
+                    '#ef4444',
+                  color: 'white'
+                }}
+              >
+                {question.difficulty}
+              </span>
+            )}
+          </div>
           <h3 className="quiz-question">{question.question}</h3>
 
           <div className="quiz-options">
@@ -319,6 +419,9 @@ function Quiz({ documents, selectedDocIds, notebookId }) {
                   ? 'Good effort!'
                   : 'Keep practicing!'}
             </p>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '8px', fontStyle: 'italic' }}>
+              Weighted scoring: Hard questions contribute 2x, Medium 1.5x, Easy 1x to your final score
+            </p>
           </div>
 
           <div className="results-analysis">
@@ -363,7 +466,27 @@ function Quiz({ documents, selectedDocIds, notebookId }) {
                   }`}
               >
                 <div className="result-header">
-                  <span className="result-number">Question {index + 1}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span className="result-number">Question {index + 1}</span>
+                    {result.difficulty && (
+                      <span
+                        style={{
+                          padding: '2px 6px',
+                          borderRadius: '3px',
+                          fontSize: '10px',
+                          fontWeight: 'bold',
+                          textTransform: 'uppercase',
+                          backgroundColor:
+                            result.difficulty.toLowerCase() === 'easy' ? '#10b981' :
+                            result.difficulty.toLowerCase() === 'medium' ? '#f59e0b' :
+                            '#ef4444',
+                          color: 'white'
+                        }}
+                      >
+                        {result.difficulty}
+                      </span>
+                    )}
+                  </div>
                   {result.is_correct ? (
                     <FiCheck className="result-icon correct" />
                   ) : (

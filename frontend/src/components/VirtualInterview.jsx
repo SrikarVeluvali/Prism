@@ -17,6 +17,8 @@ function VirtualInterview({ documents, selectedDocIds, notebookId }) {
   const [interviewType, setInterviewType] = useState('technical') // technical, behavioral, mixed
   const [difficulty, setDifficulty] = useState('medium') // easy, medium, hard
   const [duration, setDuration] = useState(15) // in minutes
+  const [useReadProgress, setUseReadProgress] = useState(false) // Limit to read pages (default: disabled)
+  const [readingProgress, setReadingProgress] = useState({})
 
   // Interview progress
   const [startTime, setStartTime] = useState(null)
@@ -67,6 +69,34 @@ function VirtualInterview({ documents, selectedDocIds, notebookId }) {
     }
   }, [])
 
+  // Fetch reading progress for selected documents
+  useEffect(() => {
+    const fetchReadingProgress = async () => {
+      if (selectedDocIds.length > 0 && useReadProgress) {
+        try {
+          const token = localStorage.getItem('token')
+          const progressData = {}
+
+          for (const docId of selectedDocIds) {
+            const response = await axios.get(
+              `${API_URL}/reading-progress/${notebookId}/${docId}`,
+              { headers: { Authorization: `Bearer ${token}` } }
+            )
+            if (response.data.has_progress && response.data.completed_pages) {
+              progressData[docId] = response.data.completed_pages
+            }
+          }
+
+          setReadingProgress(progressData)
+        } catch (error) {
+          console.error('Error fetching reading progress:', error)
+        }
+      }
+    }
+
+    fetchReadingProgress()
+  }, [selectedDocIds, useReadProgress, notebookId])
+
   // Timer
   useEffect(() => {
     let interval
@@ -90,15 +120,33 @@ function VirtualInterview({ documents, selectedDocIds, notebookId }) {
   }, [messages])
 
   const startInterview = async () => {
+    // Collect completed pages if useReadProgress is enabled
+    let pageNumbers = null
+    if (useReadProgress && Object.keys(readingProgress).length > 0) {
+      pageNumbers = Object.values(readingProgress).flat()
+
+      if (pageNumbers.length === 0) {
+        alert('You haven\'t read any pages yet. Disable "Limit to pages I\'ve read" or read some content first.')
+        return
+      }
+    }
+
     setIsProcessing(true)
     try {
-      const response = await axios.post(`${API_URL}/interview/start`, {
+      const requestData = {
         notebook_id: notebookId,
         document_ids: selectedDocIds.length > 0 ? selectedDocIds : null,
         interview_type: interviewType,
         difficulty: difficulty,
         duration: duration
-      })
+      }
+
+      // Add page_numbers if limiting to read pages
+      if (pageNumbers && pageNumbers.length > 0) {
+        requestData.page_numbers = pageNumbers
+      }
+
+      const response = await axios.post(`${API_URL}/interview/start`, requestData)
 
       setSessionId(response.data.session_id)
       setMessages([{
@@ -324,6 +372,28 @@ function VirtualInterview({ documents, selectedDocIds, notebookId }) {
                 onChange={(e) => setDuration(parseInt(e.target.value))}
                 className="duration-input"
               />
+            </div>
+
+            <div className="form-group" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '8px' }}>
+              <label style={{ marginBottom: 0, cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                <input
+                  type="checkbox"
+                  checked={useReadProgress}
+                  onChange={(e) => setUseReadProgress(e.target.checked)}
+                  style={{ marginRight: '8px' }}
+                />
+                Limit to pages I've read
+              </label>
+              {useReadProgress && Object.keys(readingProgress).length > 0 && (
+                <span style={{ fontSize: '12px', color: 'var(--accent-primary)', marginLeft: '26px' }}>
+                  ✓ {Object.values(readingProgress).flat().length} pages available
+                </span>
+              )}
+              {useReadProgress && Object.keys(readingProgress).length === 0 && (
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)', marginLeft: '26px' }}>
+                  No reading progress yet. Open a PDF in View section to start tracking.
+                </span>
+              )}
             </div>
 
             <button

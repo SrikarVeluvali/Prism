@@ -10,6 +10,7 @@ The application uses MongoDB for persistent storage of:
 - Chat history and notes
 - PDF annotations
 - Interview sessions and learning cards
+- Reading progress and bookmarks
 """
 
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -82,6 +83,12 @@ analysis_cache_collection = async_db["analysis_cache"]
 
 # PDF Questions: Store generated questions from PDF analysis with mark types
 pdf_questions_collection = async_db["pdf_questions"]
+
+# Reading Progress: Store user reading progress for documents (page tracking)
+reading_progress_collection = async_db["reading_progress"]
+
+# Bookmarks: Store user bookmarks for specific pages in documents
+bookmarks_collection = async_db["bookmarks"]
 
 # Database Initialization
 # =======================
@@ -158,6 +165,18 @@ def init_db():
         sync_db["pdf_questions"].create_index("notebook_id")
         sync_db["pdf_questions"].create_index([("document_id", 1), ("page_number", 1)])
         sync_db["pdf_questions"].create_index("created_at")
+
+        # Reading progress indexes
+        sync_db["reading_progress"].create_index([("user_id", 1), ("document_id", 1)], unique=True)
+        sync_db["reading_progress"].create_index("notebook_id")
+        sync_db["reading_progress"].create_index("updated_at")
+        sync_db["reading_progress"].create_index("last_read_at")
+
+        # Bookmarks indexes
+        sync_db["bookmarks"].create_index([("user_id", 1), ("document_id", 1)])
+        sync_db["bookmarks"].create_index("notebook_id")
+        sync_db["bookmarks"].create_index([("document_id", 1), ("page_number", 1)])
+        sync_db["bookmarks"].create_index("created_at")
 
         print("Database indexes initialized successfully")
     except Exception as e:
