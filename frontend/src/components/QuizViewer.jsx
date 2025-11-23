@@ -12,7 +12,15 @@ const QuizViewer = ({ content }) => {
   // Parse quiz from content
   const questions = useMemo(() => {
     try {
-      const data = JSON.parse(content);
+      // Clean up content - remove markdown code blocks if present
+      let cleanContent = content.trim();
+
+      // Remove markdown code blocks like ```json ... ``` or ``` ... ```
+      cleanContent = cleanContent.replace(/^```(?:json)?\s*\n/gm, '');
+      cleanContent = cleanContent.replace(/\n```\s*$/gm, '');
+      cleanContent = cleanContent.trim();
+
+      const data = JSON.parse(cleanContent);
       if (Array.isArray(data)) {
         // Normalize field names: convert correct_answer to correctAnswer
         return data.map(q => ({
@@ -21,7 +29,8 @@ const QuizViewer = ({ content }) => {
         }));
       }
       return [];
-    } catch {
+    } catch (error) {
+      console.error('JSON parsing failed, trying text parser:', error);
       return parseTextQuiz(content);
     }
   }, [content]);
@@ -67,7 +76,10 @@ const QuizViewer = ({ content }) => {
   if (questions.length === 0) {
     return (
       <div className="quiz-viewer">
-        <div className="quiz-empty">No quiz questions available</div>
+        <div className="quiz-empty">
+          <p>No quiz questions available</p>
+          <small>The quiz content may be in an unexpected format. Try generating a new quiz.</small>
+        </div>
       </div>
     );
   }
@@ -257,16 +269,7 @@ const parseTextQuiz = (text) => {
     }
   });
 
-  return questions.length > 0
-    ? questions
-    : [
-        {
-          question: 'Sample Question?',
-          options: ['Option A', 'Option B', 'Option C', 'Option D'],
-          correctAnswer: 0,
-          explanation: 'This is a sample explanation.',
-        },
-      ];
+  return questions;
 };
 
 export default QuizViewer;
