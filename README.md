@@ -2,7 +2,7 @@
 
 **AI-Powered Learning and Preparation Platform**
 
-[![Live Demo](https://img.shields.io/badge/Demo-Live-brightgreen)](https://prism-teal-seven.vercel.app/)
+[![Live Demo](https://img.shields.io/badge/Demo-Live-brightgreen)](https://prism-learning.vercel.app/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.104.1-009688.svg)](https://fastapi.tiangolo.com)
 [![React](https://img.shields.io/badge/React-18.2.0-61DAFB.svg)](https://reactjs.org)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
