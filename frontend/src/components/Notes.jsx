@@ -31,7 +31,7 @@ import { saveAs } from 'file-saver';
 import ReactMarkdown from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
 import remarkGfm from 'remark-gfm';
-const API_URL = 'http://localhost:8000';
+import { API_URL } from '../config';
 
 const NOTE_COLORS = [
   { value: '#ffffff', label: 'White' },

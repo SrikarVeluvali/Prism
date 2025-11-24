@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { FiBookmark, FiFolder, FiX, FiPlus, FiTrash2, FiRefreshCw, FiLoader, FiChevronUp, FiChevronDown, FiAlertTriangle } from 'react-icons/fi'
 import axios from 'axios'
-
-const API_URL = 'http://localhost:8000'
+import { API_URL } from '../config'
 
 const CARD_TYPES = ['fun_fact', 'mnemonic', 'key_concept', 'quote', 'summary', 'tip', 'question', 'definition']
 

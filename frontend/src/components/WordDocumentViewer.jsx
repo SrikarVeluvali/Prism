@@ -2,8 +2,7 @@ import { useState, useEffect } from 'react'
 import { FiFileText, FiChevronDown, FiDownload } from 'react-icons/fi'
 import axios from 'axios'
 import mammoth from 'mammoth'
-
-const API_URL = 'http://localhost:8000'
+import { API_URL } from '../config'
 
 function WordDocumentViewer({ documents, notebookId, selectedDoc, onDocChange, metadata }) {
   const [htmlContent, setHtmlContent] = useState('')

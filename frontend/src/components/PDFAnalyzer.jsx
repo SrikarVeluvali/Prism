@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { FiZap, FiEdit3, FiSave, FiX, FiCheck, FiLoader, FiArrowRight, FiChevronDown, FiChevronUp } from 'react-icons/fi'
 import axios from 'axios'
-
-const API_URL = 'http://localhost:8000'
+import { API_URL } from '../config'
 
 function PDFAnalyzer({ notebookId, selectedDoc, onHighlightsUpdate, onAnalysisComplete, onNavigateToPage, onSwitchToAnnotations }) {
   const [analysisMode, setAnalysisMode] = useState('auto')

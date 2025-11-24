@@ -5,8 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import NotificationModal from './NotificationModal'
 import LoadingSpinner from './LoadingSpinner'
 import { useNotification } from '../hooks/useNotification'
-
-const API_URL = 'http://localhost:8000'
+import { API_URL } from '../config'
 
 function Quiz({ documents, selectedDocIds, notebookId }) {
   const [quizState, setQuizState] = useState('idle') // idle, loading, taking, results

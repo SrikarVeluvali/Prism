@@ -7,11 +7,10 @@ import NotificationModal from './NotificationModal'
 import LoadingSpinner from './LoadingSpinner'
 import { useNotification } from '../hooks/useNotification'
 import StudyQuestions from './StudyQuestions'
+import { API_URL } from '../config'
 
 // Configure PDF.js worker - use local copy
 pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
-
-const API_URL = 'http://localhost:8000'
 
 // Preset annotation colors
 const ANNOTATION_COLORS = [

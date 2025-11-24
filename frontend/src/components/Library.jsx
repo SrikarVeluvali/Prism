@@ -10,9 +10,8 @@ import { FiPlus, FiEdit2, FiTrash2, FiX, FiCheck, FiBookOpen, FiAlertCircle, FiC
 import axios from 'axios'
 import Navbar from './Navbar'
 import { useAuth } from '../contexts/AuthContext'
+import { API_URL } from '../config'
 import '../library-styles.css'
-
-const API_URL = 'http://localhost:8000'
 
 const PRESET_COLORS = [
   { color: '#6366f1', name: 'Indigo' },

@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { FiMic, FiMicOff, FiPlay, FiPause, FiStopCircle, FiCheckCircle, FiMessageCircle, FiUser, FiCpu, FiVolume2 } from 'react-icons/fi'
 import axios from 'axios'
-
-const API_URL = 'http://localhost:8000'
+import { API_URL } from '../config'
 
 function VirtualInterview({ documents, selectedDocIds, notebookId }) {
   const [interviewState, setInterviewState] = useState('setup') // setup, active, completed

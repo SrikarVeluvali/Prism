@@ -2,8 +2,7 @@ import { useState, useEffect } from 'react'
 import { FiFileText, FiChevronDown } from 'react-icons/fi'
 import axios from 'axios'
 import ReactMarkdown from 'react-markdown'
-
-const API_URL = 'http://localhost:8000'
+import { API_URL } from '../config'
 
 function TextDocumentViewer({ documents, notebookId, selectedDoc, onDocChange, metadata }) {
   const [content, setContent] = useState('')

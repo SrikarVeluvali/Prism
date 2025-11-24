@@ -2,8 +2,7 @@ import { useState, useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { FiUploadCloud, FiX, FiFile, FiCheck, FiYoutube } from 'react-icons/fi'
 import axios from 'axios'
-
-const API_URL = 'http://localhost:8000'
+import { API_URL } from '../config'
 
 function FileUploadModal({ onClose, onSuccess, notebookId }) {
   const [activeTab, setActiveTab] = useState('files') // 'files' or 'youtube'
