@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { FiLoader, FiCheckCircle, FiCode, FiFileText, FiList, FiRefreshCw } from 'react-icons/fi'
 import axios from 'axios'
 import ReactMarkdown from 'react-markdown';
-const API_URL = 'http://localhost:8000'
+import { API_URL } from '../config'
 
 function MockTest({ documents, selectedDocIds, notebookId }) {
   const [testState, setTestState] = useState('idle') // idle, loading, taking, results

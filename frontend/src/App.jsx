@@ -34,12 +34,10 @@ import Auth from './components/Auth'
 import Navbar from './components/Navbar'
 import { NotebookProvider, useNotebook } from './contexts/NotebookContext'
 import { useAuth } from './contexts/AuthContext'
+import { API_URL } from './config'
 import './index.css'
 import './library-styles.css'
 import ReactMarkdown from 'react-markdown'
-
-// Backend API base URL
-const API_URL = 'http://localhost:8000'
 
 /**
  * AppContent Component

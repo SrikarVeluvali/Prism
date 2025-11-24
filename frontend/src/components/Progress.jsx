@@ -2,8 +2,7 @@ import { useState, useEffect } from 'react'
 import { FiAward, FiTrendingUp, FiBarChart2, FiCheckCircle, FiClock, FiStar, FiTarget, FiBook, FiBookmark } from 'react-icons/fi'
 import axios from 'axios'
 import LoadingSpinner from './LoadingSpinner'
-
-const API_URL = 'http://localhost:8000'
+import { API_URL } from '../config'
 
 function Progress({ notebookId }) {
   const [loading, setLoading] = useState(true)

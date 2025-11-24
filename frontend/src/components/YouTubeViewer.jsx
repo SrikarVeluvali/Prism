@@ -2,8 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { FiYoutube, FiChevronDown, FiClock, FiMessageSquare, FiPlus, FiX, FiPlay, FiMessageCircle, FiCheck } from 'react-icons/fi'
 import axios from 'axios'
 import ReactPlayer from 'react-player/youtube'
-
-const API_URL = 'http://localhost:8000'
+import { API_URL } from '../config'
 
 // Preset annotation colors
 const ANNOTATION_COLORS = [

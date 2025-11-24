@@ -121,10 +121,21 @@ async def startup_event():
 # CORS Configuration
 # ==================
 # Enable Cross-Origin Resource Sharing for frontend communication
-# Allows requests from React dev server (Vite on port 3000 and 5173)
+# Supports both local development and production deployments
+# For production, set FRONTEND_URL environment variable to your Vercel URL
+allowed_origins = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+]
+
+# Add production frontend URL if specified
+frontend_url = os.getenv("FRONTEND_URL")
+if frontend_url:
+    allowed_origins.append(frontend_url)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],  # Allow all HTTP methods (GET, POST, PUT, DELETE, etc.)
     allow_headers=["*"],  # Allow all headers

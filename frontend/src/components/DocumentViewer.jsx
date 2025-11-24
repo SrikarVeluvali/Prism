@@ -5,8 +5,7 @@ import TextDocumentViewer from './TextDocumentViewer'
 import WordDocumentViewer from './WordDocumentViewer'
 import YouTubeViewer from './YouTubeViewer'
 import DocumentList from './DocumentList'
-
-const API_URL = 'http://localhost:8000'
+import { API_URL } from '../config'
 
 /**
  * DocumentViewer - Smart router component

@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react'
 import { FiZap, FiLoader, FiChevronDown, FiChevronUp } from 'react-icons/fi'
 import axios from 'axios'
-
-const API_URL = 'http://localhost:8000'
+import { API_URL } from '../config'
 
 function StudyQuestions({ notebookId, documentId, onHighlightAnswer }) {
   const [questions, setQuestions] = useState([])
