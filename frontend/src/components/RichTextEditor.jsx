@@ -285,14 +285,8 @@ const MenuBar = ({ editor }) => {
 
       {/* Insert Elements */}
       <div className="menu-group">
-        <button onClick={addImage} className="menu-button" title="Insert Image">
-          <FaImage />
-        </button>
         <button onClick={addLink} className="menu-button" title="Insert Link">
           <FaLink />
-        </button>
-        <button onClick={addTable} className="menu-button" title="Insert Table">
-          <FaTable />
         </button>
       </div>
     </div>
