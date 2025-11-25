@@ -163,24 +163,23 @@ function Auth({ onAuth }) {
             </div>
 
             <form onSubmit={handleSubmit} className="auth-form">
-              {!isLogin && (
-                <div className="auth-field">
-                  <label htmlFor="name" className="auth-label">Full Name</label>
-                  <div className="auth-input-wrapper">
-                    <FiUser className="auth-input-icon" />
-                    <input
-                      type="text"
-                      id="name"
-                      name="name"
-                      placeholder="Enter your full name"
-                      value={formData.name}
-                      onChange={handleChange}
-                      required
-                      className="auth-input"
-                    />
-                  </div>
+              <div className="auth-field" data-hidden={isLogin ? "true" : "false"}>
+                <label htmlFor="name" className="auth-label">Full Name</label>
+                <div className="auth-input-wrapper">
+                  <FiUser className="auth-input-icon" />
+                  <input
+                    type="text"
+                    id="name"
+                    name="name"
+                    placeholder="Enter your full name"
+                    value={formData.name}
+                    onChange={handleChange}
+                    required={!isLogin}
+                    className="auth-input"
+                    tabIndex={isLogin ? -1 : 0}
+                  />
                 </div>
-              )}
+              </div>
 
               <div className="auth-field">
                 <label htmlFor="email" className="auth-label">Email Address</label>

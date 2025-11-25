@@ -394,9 +394,6 @@ function AppContent() {
 
   return (
     <div className="app">
-      {/* Navbar */}
-      <Navbar />
-
       <div className="app-body">
         <div className="sidebar">
         <div className="sidebar-header">
