@@ -1683,46 +1683,353 @@ body {
 }
 
 /* Responsive */
+/* ==================== MOBILE RESPONSIVE STYLES ==================== */
+
+/* Mobile Menu Toggle Button */
+.mobile-menu-toggle {
+  display: none;
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 1001;
+  width: 44px;
+  height: 44px;
+  background: var(--bg-secondary);
+  border: 2px solid var(--border-color);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.mobile-menu-toggle:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent-primary);
+  transform: scale(1.05);
+}
+
+.mobile-menu-toggle:active {
+  transform: scale(0.95);
+}
+
+.mobile-menu-toggle svg {
+  color: var(--accent-primary);
+  transition: transform 0.3s ease;
+}
+
+.mobile-menu-toggle.open svg {
+  transform: rotate(90deg);
+}
+
+/* Mobile Overlay */
+.mobile-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  z-index: 99;
+  animation: fadeIn 0.3s ease;
+}
+
 @media (max-width: 768px) {
+  /* Show mobile menu toggle */
+  .mobile-menu-toggle {
+    display: flex;
+  }
+
+  .mobile-overlay.active {
+    display: block;
+  }
+
+  /* Sidebar mobile behavior */
   .sidebar {
     position: fixed;
-    left: -300px;
+    left: -100%;
     top: 0;
     bottom: 0;
     z-index: 100;
-    transition: left 0.3s;
+    width: 85%;
+    max-width: 320px;
+    transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5);
   }
 
   .sidebar.open {
     left: 0;
   }
 
-  .chat-container {
-    padding: 16px;
+  /* Mode Switcher - Scrollable horizontal layout */
+  .mode-switcher {
+    grid-template-columns: repeat(7, minmax(80px, 1fr));
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 12px;
+    gap: 8px;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
   }
 
-  .input-area {
-    padding: 12px 16px;
+  .mode-switcher::-webkit-scrollbar {
+    display: none;
   }
 
-  .message {
-    max-width: 100%;
+  .mode-button {
+    padding: 10px 8px;
+    font-size: 11px;
+    min-width: 80px;
+    flex-direction: column;
+    gap: 4px;
+    white-space: nowrap;
   }
 
-  .quiz-container {
-    padding: 16px;
-  }
-
-  .quiz-question-card {
-    padding: 20px;
-  }
-
-  .quiz-question {
+  .mode-button svg {
     font-size: 18px;
   }
 
+  /* Main content - account for mobile menu */
+  .main-content {
+    width: 100%;
+  }
+
+  /* Chat container mobile optimization */
+  .chat-container {
+    padding: 80px 16px 16px 16px;
+  }
+
+  /* Messages mobile optimization */
+  .message {
+    max-width: 100%;
+    padding: 12px;
+  }
+
+  .message-avatar {
+    width: 32px;
+    height: 32px;
+    font-size: 16px;
+  }
+
+  .message-content {
+    font-size: 14px;
+  }
+
+  .message-markdown h1 {
+    font-size: 20px;
+  }
+
+  .message-markdown h2 {
+    font-size: 18px;
+  }
+
+  .message-markdown h3 {
+    font-size: 16px;
+  }
+
+  .message-markdown p {
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  .message-markdown pre {
+    font-size: 12px;
+    padding: 12px;
+    overflow-x: auto;
+  }
+
+  .message-markdown code {
+    font-size: 12px;
+  }
+
+  /* Input area mobile optimization */
+  .input-area {
+    padding: 12px;
+    position: sticky;
+    bottom: 0;
+    background: var(--bg-primary);
+    border-top: 2px solid var(--border-color);
+  }
+
+  .input-wrapper {
+    padding: 8px 10px;
+  }
+
+  .input-wrapper textarea {
+    font-size: 14px;
+    max-height: 120px;
+  }
+
+  .send-button {
+    padding: 10px 14px;
+    font-size: 12px;
+    min-width: 70px;
+  }
+
+  /* Empty state mobile */
+  .empty-state {
+    padding: 60px 24px 24px 24px;
+  }
+
+  .empty-state-icon {
+    font-size: 48px;
+  }
+
+  .empty-state h2 {
+    font-size: 20px;
+  }
+
+  .empty-state p {
+    font-size: 14px;
+  }
+
+  /* Documents list mobile */
+  .documents-list {
+    padding: 12px;
+  }
+
+  .document-item {
+    padding: 10px;
+    margin-bottom: 8px;
+  }
+
+  .document-name {
+    font-size: 13px;
+  }
+
+  .document-info {
+    font-size: 11px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  /* Quiz mobile optimization */
+  .quiz-container {
+    padding: 80px 16px 16px 16px;
+  }
+
+  .quiz-setup {
+    padding: 24px 16px;
+  }
+
+  .quiz-header h2 {
+    font-size: 24px;
+  }
+
+  .quiz-header p {
+    font-size: 14px;
+  }
+
+  .quiz-config {
+    gap: 16px;
+  }
+
+  .quiz-question-card {
+    padding: 16px;
+    margin: 0 0 16px 0;
+  }
+
+  .quiz-question {
+    font-size: 16px;
+    margin-bottom: 16px;
+  }
+
+  .quiz-options {
+    gap: 10px;
+  }
+
+  .quiz-option {
+    padding: 14px;
+    font-size: 14px;
+  }
+
+  .quiz-nav-buttons {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .quiz-nav-buttons button {
+    width: 100%;
+  }
+
+  /* Assessment selector mobile */
+  .assessment-selector-container {
+    padding: 20px 16px;
+    align-items: flex-start;
+  }
+
+  .assessment-selector {
+    padding: 0;
+    max-width: 100%;
+  }
+
+  .assessment-selector h2 {
+    font-size: 26px;
+    margin-bottom: 8px;
+  }
+
+  .assessment-selector > p {
+    font-size: 14px;
+    margin-bottom: 24px;
+  }
+
+  .assessment-options {
+    grid-template-columns: 1fr;
+    gap: 20px;
+    margin-top: 24px;
+  }
+
+  .assessment-option-card {
+    padding: 28px 20px;
+    border-radius: 12px;
+  }
+
+  .assessment-icon {
+    width: 64px;
+    height: 64px;
+    margin-bottom: 20px;
+  }
+
+  .assessment-icon svg {
+    font-size: 32px;
+  }
+
+  .assessment-option-card h3 {
+    font-size: 22px;
+    margin-bottom: 10px;
+  }
+
+  .assessment-option-card > p {
+    font-size: 13px;
+    margin-bottom: 20px;
+    line-height: 1.5;
+  }
+
+  .assessment-option-card ul {
+    font-size: 13px;
+  }
+
+  .assessment-option-card li {
+    padding: 8px 0;
+    font-size: 13px;
+    padding-left: 28px;
+  }
+
+  .assessment-option-card li::before {
+    width: 20px;
+    height: 20px;
+    font-size: 11px;
+  }
+
+  /* Topic grid mobile */
   .topic-grid {
     grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  /* Results mobile */
+  .results-container {
+    padding: 16px;
   }
 
   .results-score-circle {
@@ -1732,6 +2039,259 @@ body {
 
   .results-score-text {
     font-size: 36px;
+  }
+
+  .results-grade {
+    font-size: 18px;
+  }
+
+  /* Modal mobile optimization */
+  .modal {
+    max-width: 95%;
+    max-height: 90vh;
+    margin: 20px;
+  }
+
+  .modal-header {
+    padding: 16px;
+  }
+
+  .modal-header h2 {
+    font-size: 18px;
+  }
+
+  .modal-body {
+    padding: 20px 16px;
+  }
+
+  .modal-footer {
+    padding: 12px 16px;
+    flex-wrap: wrap;
+  }
+
+  .modal-footer button {
+    flex: 1;
+    min-width: 100px;
+  }
+
+  /* Dropzone mobile */
+  .dropzone {
+    padding: 32px 16px;
+  }
+
+  .dropzone-icon {
+    font-size: 40px;
+  }
+
+  .dropzone p {
+    font-size: 13px;
+  }
+
+  /* Sidebar header mobile */
+  .sidebar-header {
+    padding: 16px 12px 12px 12px;
+  }
+
+  .sidebar-header h1 {
+    font-size: 20px;
+  }
+
+  .sidebar-header p {
+    font-size: 13px;
+  }
+
+  /* Upload section mobile */
+  .upload-section {
+    padding: 12px;
+  }
+
+  .upload-button {
+    padding: 12px 14px;
+    font-size: 13px;
+  }
+
+  /* Clear all button mobile */
+  .clear-all-button {
+    margin: 12px;
+    padding: 10px;
+    font-size: 12px;
+  }
+}
+
+/* Small mobile devices */
+@media (max-width: 480px) {
+  .mobile-menu-toggle {
+    width: 40px;
+    height: 40px;
+    top: 12px;
+    left: 12px;
+  }
+
+  .sidebar {
+    width: 90%;
+    max-width: 280px;
+  }
+
+  .sidebar-header h1 {
+    font-size: 18px;
+  }
+
+  .mode-switcher {
+    grid-template-columns: repeat(7, minmax(70px, 1fr));
+    padding: 10px 8px;
+    gap: 6px;
+  }
+
+  .mode-button {
+    padding: 8px 6px;
+    font-size: 10px;
+    min-width: 70px;
+  }
+
+  .mode-button svg {
+    font-size: 16px;
+  }
+
+  .chat-container {
+    padding: 70px 12px 12px 12px;
+  }
+
+  .message {
+    padding: 10px;
+  }
+
+  .message-avatar {
+    width: 28px;
+    height: 28px;
+    font-size: 14px;
+  }
+
+  .message-content {
+    font-size: 13px;
+  }
+
+  .input-area {
+    padding: 10px;
+  }
+
+  .input-wrapper {
+    padding: 6px 8px;
+  }
+
+  .input-wrapper textarea {
+    font-size: 13px;
+  }
+
+  .send-button {
+    padding: 8px 12px;
+    font-size: 11px;
+    min-width: 60px;
+  }
+
+  .empty-state {
+    padding: 40px 16px 16px 16px;
+  }
+
+  .empty-state-icon {
+    font-size: 40px;
+  }
+
+  .empty-state h2 {
+    font-size: 18px;
+  }
+
+  .empty-state p {
+    font-size: 13px;
+  }
+
+  .document-item {
+    padding: 8px;
+  }
+
+  .document-name {
+    font-size: 12px;
+  }
+
+  .document-info {
+    font-size: 10px;
+  }
+
+  .quiz-container {
+    padding: 70px 12px 12px 12px;
+  }
+
+  .quiz-question-card {
+    padding: 14px;
+  }
+
+  .quiz-question {
+    font-size: 15px;
+  }
+
+  .quiz-option {
+    padding: 12px;
+    font-size: 13px;
+  }
+
+  .assessment-selector-container {
+    padding: 16px 12px;
+  }
+
+  .assessment-selector h2 {
+    font-size: 22px;
+  }
+
+  .assessment-selector > p {
+    font-size: 13px;
+    margin-bottom: 20px;
+  }
+
+  .assessment-options {
+    gap: 16px;
+    margin-top: 20px;
+  }
+
+  .assessment-option-card {
+    padding: 24px 16px;
+  }
+
+  .assessment-icon {
+    width: 56px;
+    height: 56px;
+    margin-bottom: 16px;
+  }
+
+  .assessment-icon svg {
+    font-size: 28px;
+  }
+
+  .assessment-option-card h3 {
+    font-size: 20px;
+  }
+
+  .assessment-option-card > p {
+    font-size: 12px;
+  }
+
+  .assessment-option-card li {
+    padding: 6px 0;
+    font-size: 12px;
+    padding-left: 24px;
+  }
+
+  .assessment-option-card li::before {
+    width: 18px;
+    height: 18px;
+    font-size: 10px;
+  }
+
+  .results-score-circle {
+    width: 100px;
+    height: 100px;
+  }
+
+  .results-score-text {
+    font-size: 30px;
   }
 }
 
@@ -2931,15 +3491,37 @@ body {
   color: var(--text-secondary);
 }
 
+/* Clean, minimal toolbar with better organization */
 .pdf-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 20px;
+  padding: 10px 16px;
   background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-color);
   gap: 16px;
   flex-shrink: 0;
+}
+
+.toolbar-left,
+.toolbar-center,
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toolbar-left {
+  flex: 1;
+  min-width: 0;
+}
+
+.toolbar-center {
+  justify-content: center;
+}
+
+.toolbar-right {
+  justify-content: flex-end;
 }
 
 .pdf-title {
@@ -2947,13 +3529,34 @@ body {
   align-items: center;
   gap: 8px;
   font-weight: 500;
-  font-size: 14px;
-  color: var(--text);
-  flex: 1;
-  min-width: 0;
+  font-size: 13px;
+  color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  padding: 0 12px;
+}
+
+.page-info,
+.zoom-level {
+  padding: 0 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  min-width: 60px;
+  text-align: center;
+}
+
+.progress-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--accent-primary);
+  background: rgba(212, 165, 116, 0.1);
+  border-radius: 6px;
+  font-weight: 500;
 }
 
 .pdf-controls {
@@ -2965,24 +3568,34 @@ body {
 .toolbar-button {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  padding: 8px 12px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
+  padding: 8px;
+  background: transparent;
+  border: 1px solid transparent;
   border-radius: 6px;
-  color: var(--text);
+  color: var(--text-secondary);
   font-size: 13px;
   cursor: pointer;
   transition: all 0.2s;
+  min-width: 36px;
+  min-height: 36px;
 }
 
 .toolbar-button:hover:not(:disabled) {
-  background: var(--bg);
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-color);
+}
+
+.toolbar-button.active {
+  background: var(--accent-primary);
+  color: var(--bg-primary);
   border-color: var(--accent-primary);
 }
 
 .toolbar-button:disabled {
-  opacity: 0.5;
+  opacity: 0.3;
   cursor: not-allowed;
 }
 
@@ -2990,15 +3603,29 @@ body {
   display: flex;
   flex: 1;
   overflow: hidden;
+  position: relative;
 }
 
+/* Collapsible Sidebar - Hidden by default, slides in on demand */
 .pdf-sidebar {
-  width: 320px;
+  width: 280px;
   background: var(--bg-secondary);
-  border-right: 1px solid var(--border);
+  border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 10;
+  transform: translateX(-100%);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 4px 0 12px rgba(0, 0, 0, 0.3);
+}
+
+.pdf-sidebar.visible {
+  transform: translateX(0);
 }
 
 .pdf-sidebar h3 {
@@ -8814,3 +9441,1266 @@ body {
   opacity: 0.7;
 }
 
+
+/* ==================== ADDITIONAL MOBILE RESPONSIVE STYLES FOR VIEWERS ==================== */
+
+@media (max-width: 768px) {
+  /* PDF Annotator Mobile */
+  .pdf-annotator-container {
+    flex-direction: column;
+  }
+
+  .pdf-sidebar {
+    width: 100%;
+    max-height: 200px;
+    border-right: none;
+    border-bottom: 1px solid var(--border-color);
+    overflow-y: auto;
+  }
+
+  .pdf-viewer-area {
+    flex: 1;
+  }
+
+  .pdf-controls {
+    flex-wrap: wrap;
+    padding: 8px;
+    gap: 6px;
+  }
+
+  .pdf-controls button {
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+
+  .page-info {
+    font-size: 12px;
+    width: 100%;
+    text-align: center;
+    order: -1;
+    margin-bottom: 8px;
+  }
+
+  .zoom-controls {
+    gap: 4px;
+  }
+
+  .pdf-canvas-container {
+    padding: 12px;
+  }
+
+  /* Notes Mobile */
+  .notes-container {
+    padding: 12px;
+  }
+
+  .notes-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .notes-header h2 {
+    font-size: 20px;
+  }
+
+  .notes-actions {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .notes-actions button {
+    flex: 1;
+    min-width: 120px;
+  }
+
+  .tiptap {
+    font-size: 14px;
+    padding: 16px;
+  }
+
+  .tiptap h1 {
+    font-size: 24px;
+  }
+
+  .tiptap h2 {
+    font-size: 20px;
+  }
+
+  .tiptap h3 {
+    font-size: 18px;
+  }
+
+  /* Document Viewer Mobile */
+  .document-viewer-container {
+    padding: 12px;
+  }
+
+  .document-viewer-header {
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .document-selector {
+    width: 100%;
+  }
+
+  /* Doomscroll Mobile */
+  .doomscroll-container {
+    padding: 12px;
+  }
+
+  .scroll-card {
+    max-width: 100%;
+    margin: 0 auto;
+    padding: 24px 20px;
+  }
+
+  .scroll-card-header h2 {
+    font-size: 20px;
+  }
+
+  .scroll-card-content {
+    font-size: 14px;
+  }
+
+  .scroll-controls {
+    padding: 16px 12px;
+  }
+
+  .scroll-controls button {
+    padding: 12px 20px;
+    font-size: 14px;
+  }
+
+  /* Virtual Interview Mobile */
+  .interview-container {
+    padding: 12px;
+  }
+
+  .interview-header {
+    padding: 16px;
+  }
+
+  .interview-header h2 {
+    font-size: 20px;
+  }
+
+  .interview-setup {
+    padding: 20px 16px;
+  }
+
+  .interview-config {
+    gap: 16px;
+  }
+
+  .interview-question {
+    padding: 20px 16px;
+  }
+
+  .interview-question-text {
+    font-size: 18px;
+  }
+
+  .interview-controls {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .interview-controls button {
+    width: 100%;
+  }
+
+  /* Progress Page Mobile */
+  .progress-container {
+    padding: 12px;
+  }
+
+  .progress-header {
+    padding: 16px;
+  }
+
+  .progress-header h2 {
+    font-size: 20px;
+  }
+
+  .progress-stats {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .stat-card {
+    padding: 16px;
+  }
+
+  .stat-value {
+    font-size: 28px;
+  }
+
+  .stat-label {
+    font-size: 12px;
+  }
+
+  .progress-chart {
+    padding: 16px;
+  }
+
+  /* Flashcards Mobile */
+  .flashcard-container {
+    padding: 12px;
+  }
+
+  .flashcard {
+    min-height: 250px;
+    padding: 24px 20px;
+  }
+
+  .flashcard-front,
+  .flashcard-back {
+    font-size: 16px;
+  }
+
+  .flashcard-controls {
+    padding: 16px 12px;
+    flex-wrap: wrap;
+  }
+
+  .flashcard-controls button {
+    flex: 1;
+    min-width: 100px;
+  }
+
+  /* Mind Map Mobile */
+  .mindmap-container {
+    padding: 0;
+  }
+
+  .mindmap-controls {
+    flex-wrap: wrap;
+    padding: 8px;
+    gap: 6px;
+  }
+
+  .mindmap-controls button {
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+
+  /* Quiz Viewer Mobile */
+  .quiz-viewer-container {
+    padding: 12px;
+  }
+
+  .question-card {
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+
+  .question-text {
+    font-size: 15px;
+  }
+
+  .answer-option {
+    padding: 12px;
+    font-size: 14px;
+  }
+
+  /* Timeline Viewer Mobile */
+  .timeline-container {
+    padding: 12px;
+  }
+
+  .timeline-item {
+    padding-left: 40px;
+  }
+
+  .timeline-marker {
+    width: 12px;
+    height: 12px;
+    left: 14px;
+  }
+
+  .timeline-date {
+    font-size: 12px;
+  }
+
+  .timeline-content {
+    padding: 12px;
+  }
+
+  .timeline-title {
+    font-size: 16px;
+  }
+
+  .timeline-description {
+    font-size: 13px;
+  }
+
+  /* Comparison Table Mobile */
+  .comparison-table-container {
+    padding: 12px;
+    overflow-x: auto;
+  }
+
+  .comparison-table {
+    font-size: 12px;
+  }
+
+  .comparison-table th,
+  .comparison-table td {
+    padding: 10px 8px;
+    min-width: 120px;
+  }
+
+  /* Study Questions Mobile */
+  .study-questions-container {
+    padding: 12px;
+  }
+
+  .question-item {
+    padding: 16px;
+  }
+
+  .question-title {
+    font-size: 15px;
+  }
+
+  .question-content {
+    font-size: 13px;
+  }
+
+  /* YouTube Viewer Mobile */
+  .youtube-viewer-container {
+    padding: 12px;
+  }
+
+  .video-container {
+    margin-bottom: 16px;
+  }
+
+  .video-info {
+    padding: 16px;
+  }
+
+  .video-title {
+    font-size: 18px;
+  }
+
+  .video-description {
+    font-size: 13px;
+  }
+
+  /* Mock Test Mobile */
+  .mock-test-container {
+    padding: 12px;
+  }
+
+  .mock-test-setup {
+    padding: 24px 16px;
+  }
+
+  .mock-test-config {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .mock-test-header h2 {
+    font-size: 24px;
+  }
+
+  .mock-test-header p {
+    font-size: 14px;
+  }
+
+  .section-header {
+    font-size: 16px;
+  }
+
+  .question-block {
+    padding: 16px;
+  }
+
+  .mock-question {
+    font-size: 15px;
+  }
+
+  .mock-answer-input {
+    font-size: 14px;
+    padding: 12px;
+  }
+
+  .submit-test-button {
+    width: 100%;
+    padding: 14px;
+    font-size: 14px;
+  }
+}
+
+@media (max-width: 480px) {
+  /* Extra small mobile adjustments */
+  .pdf-controls {
+    padding: 6px;
+  }
+
+  .pdf-controls button {
+    padding: 6px 10px;
+    font-size: 11px;
+  }
+
+  .zoom-controls button {
+    padding: 6px;
+  }
+
+  .scroll-card {
+    padding: 20px 16px;
+  }
+
+  .scroll-card-header h2 {
+    font-size: 18px;
+  }
+
+  .scroll-card-content {
+    font-size: 13px;
+  }
+
+  .interview-question-text {
+    font-size: 16px;
+  }
+
+  .flashcard {
+    min-height: 220px;
+    padding: 20px 16px;
+  }
+
+  .flashcard-front,
+  .flashcard-back {
+    font-size: 15px;
+  }
+
+  .stat-card {
+    padding: 12px;
+  }
+
+  .stat-value {
+    font-size: 24px;
+  }
+
+  .comparison-table {
+    font-size: 11px;
+  }
+
+  .comparison-table th,
+  .comparison-table td {
+    padding: 8px 6px;
+    min-width: 100px;
+  }
+
+  .mock-test-setup {
+    padding: 20px 12px;
+  }
+
+  .mock-test-header h2 {
+    font-size: 20px;
+  }
+
+  .question-block {
+    padding: 12px;
+  }
+
+  .mock-question {
+    font-size: 14px;
+  }
+}
+
+/* ==================== TOUCH-FRIENDLY ENHANCEMENTS ==================== */
+
+/* Make all interactive elements touch-friendly */
+@media (max-width: 768px) {
+  /* Minimum touch target size of 44x44px for better usability */
+  button,
+  .mode-button,
+  .document-item,
+  .quiz-option,
+  .assessment-option-card,
+  .send-button,
+  .upload-button,
+  .delete-button,
+  .validate-button,
+  a {
+    min-height: 44px;
+    -webkit-tap-highlight-color: rgba(212, 165, 116, 0.2);
+  }
+
+  /* Improve button spacing for easier tapping */
+  .quiz-nav-buttons,
+  .interview-controls,
+  .flashcard-controls {
+    gap: 12px;
+  }
+
+  /* Larger tap targets for small icons */
+  .book-action-btn,
+  .modal-close,
+  .delete-button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* Smooth scrolling for better experience */
+  * {
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+  }
+
+  /* Prevent text selection on tap for UI elements */
+  .mode-button,
+  .book-spine,
+  .assessment-option-card,
+  .quiz-option,
+  button {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  /* Enhanced focus states for accessibility */
+  button:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    outline: 2px solid var(--accent-primary);
+    outline-offset: 2px;
+  }
+
+  /* Prevent double-tap zoom on buttons */
+  button,
+  .mode-button,
+  .quiz-option,
+  .send-button {
+    touch-action: manipulation;
+  }
+
+  /* Improve swipe gestures for Doomscroll */
+  .scroll-card {
+    touch-action: pan-y;
+  }
+
+  /* Better touch feedback */
+  .mode-button:active,
+  .quiz-option:active,
+  .assessment-option-card:active,
+  button:active {
+    transform: scale(0.98);
+    opacity: 0.9;
+  }
+
+  /* Sticky positioning for important controls */
+  .input-area {
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
+  }
+
+  /* Improve modal interactions */
+  .modal-overlay {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Better spacing for form elements */
+  .form-group {
+    margin-bottom: 20px;
+  }
+
+  .form-input,
+  .form-select,
+  textarea {
+    font-size: 16px; /* Prevents zoom on iOS */
+  }
+
+  /* Improve readability */
+  body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-size-adjust: 100%;
+  }
+}
+
+/* ==================== LANDSCAPE MOBILE OPTIMIZATIONS ==================== */
+
+@media (max-width: 768px) and (orientation: landscape) {
+  .chat-container {
+    padding: 60px 16px 16px 16px;
+  }
+
+  .sidebar {
+    width: 70%;
+    max-width: 280px;
+  }
+
+  .mode-switcher {
+    padding: 8px;
+  }
+
+  .mode-button {
+    padding: 8px 6px;
+    font-size: 11px;
+  }
+
+  .empty-state {
+    padding: 40px 24px 24px 24px;
+  }
+
+  .quiz-question-card {
+    margin: 0;
+  }
+
+  .assessment-selector {
+    padding: 20px 16px;
+  }
+}
+
+/* ==================== HIGH DPI SCREENS ==================== */
+
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+  .app-logo,
+  .library-logo {
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
+  }
+}
+
+/* ==================== PDF VIEWER ENHANCEMENTS ==================== */
+
+/* Sidebar overlay */
+.pdf-sidebar-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(2px);
+  z-index: 9;
+  animation: fadeIn 0.3s ease;
+  cursor: pointer;
+}
+
+/* PDF viewer area takes full width when sidebar is hidden */
+.pdf-viewer-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-primary);
+  position: relative;
+  z-index: 1;
+}
+
+/* Center PDF content */
+.pdf-canvas-container {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 24px;
+  background: var(--bg-primary);
+}
+
+/* Make PDF rendering crisp */
+.react-pdf__Page {
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  background: white;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.react-pdf__Page__canvas {
+  max-width: 100%;
+  height: auto !important;
+  display: block;
+}
+
+/* Improve sidebar tabs visibility */
+.sidebar-tabs {
+  display: flex;
+  gap: 0;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.sidebar-tab {
+  flex: 1;
+  padding: 12px 8px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.2s;
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.sidebar-tab:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.sidebar-tab.active {
+  color: var(--accent-primary);
+  border-bottom-color: var(--accent-primary);
+  background: var(--bg-primary);
+}
+
+/* Mobile responsive toolbar */
+@media (max-width: 768px) {
+  .pdf-toolbar {
+    padding: 8px 12px;
+    gap: 8px;
+  }
+
+  .toolbar-left {
+    flex: 0 0 auto;
+    gap: 6px;
+  }
+
+  .toolbar-center {
+    flex: 1;
+  }
+
+  .toolbar-right {
+    flex: 0 0 auto;
+    gap: 6px;
+  }
+
+  .pdf-title {
+    display: none;
+  }
+
+  .toolbar-button {
+    padding: 6px;
+    min-width: 32px;
+    min-height: 32px;
+    font-size: 12px;
+  }
+
+  .page-info,
+  .zoom-level {
+    font-size: 12px;
+    padding: 0 4px;
+    min-width: 50px;
+  }
+
+  .progress-indicator {
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+
+  .pdf-sidebar {
+    width: 85%;
+    max-width: 320px;
+  }
+
+  .sidebar-tab {
+    padding: 10px 6px;
+    font-size: 10px;
+    gap: 4px;
+  }
+
+  .pdf-canvas-container {
+    padding: 16px 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  .toolbar-button span {
+    display: none;
+  }
+
+  .progress-indicator {
+    display: none;
+  }
+
+  .zoom-level {
+    display: none;
+  }
+
+  .pdf-sidebar {
+    width: 90%;
+    max-width: 280px;
+  }
+
+  .sidebar-tab {
+    padding: 8px 4px;
+    font-size: 9px;
+  }
+
+  .sidebar-tab svg {
+    display: none;
+  }
+}
+
+/* ==================== NOTES MOBILE RESPONSIVE STYLES ==================== */
+
+@media (max-width: 768px) {
+  /* Notes header mobile optimization */
+  .notes-header {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 16px 12px;
+    gap: 12px;
+  }
+
+  .notes-header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .notes-header h2 {
+    font-size: 20px;
+  }
+
+  .notes-count {
+    font-size: 14px;
+    color: var(--text-secondary);
+  }
+
+  .notes-header-right {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+  }
+
+  /* Top row: Search and Filter */
+  .notes-header-right > :nth-child(1),
+  .notes-header-right > :nth-child(2) {
+    order: 1;
+  }
+
+  /* Rearrange for mobile: Search bar first */
+  .notes-search {
+    width: 100%;
+    order: 1;
+  }
+
+  .search-input {
+    width: 100%;
+    padding: 10px 12px 10px 40px;
+    font-size: 14px;
+  }
+
+  /* Filter button */
+  .icon-button {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 10px;
+    font-size: 16px;
+  }
+
+  /* Action buttons row */
+  .notes-actions-row {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+    order: 2;
+  }
+
+  .action-button {
+    flex: 1;
+    padding: 12px 14px;
+    font-size: 13px;
+    justify-content: center;
+    white-space: nowrap;
+  }
+
+  .action-button.primary {
+    order: 1;
+  }
+
+  .action-button.ai-generate {
+    order: 2;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+  }
+
+  .action-button.ai-generate:hover {
+    background: linear-gradient(135deg, #5568d3 0%, #653a8e 100%);
+  }
+
+  /* Notes filters mobile */
+  .notes-filters {
+    flex-direction: column;
+    padding: 12px;
+    gap: 12px;
+  }
+
+  .filter-group {
+    width: 100%;
+  }
+
+  .filter-group label {
+    font-size: 12px;
+    margin-bottom: 6px;
+  }
+
+  .filter-group select {
+    width: 100%;
+    padding: 10px;
+    font-size: 14px;
+  }
+
+  .filter-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .tag-filter {
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+
+  /* Notes grid mobile */
+  .notes-grid {
+    grid-template-columns: 1fr;
+    padding: 16px 12px;
+    gap: 16px;
+  }
+
+  /* Note cards mobile */
+  .note-card {
+    border-radius: 10px;
+  }
+
+  .note-card-header {
+    padding: 14px;
+  }
+
+  .note-card-header h3 {
+    font-size: 15px;
+  }
+
+  .note-card-actions {
+    opacity: 1;
+  }
+
+  .note-card-actions button {
+    padding: 8px;
+    min-width: 36px;
+    min-height: 36px;
+  }
+
+  .note-card-content {
+    padding: 14px;
+  }
+
+  .note-card-content p {
+    font-size: 13px;
+    -webkit-line-clamp: 3;
+  }
+
+  .note-card-footer {
+    padding: 12px 14px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  /* Notes fullscreen editor mobile */
+  .notes-fullscreen-editor {
+    padding: 0;
+  }
+
+  .editor-top-bar {
+    padding: 12px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .editor-top-left {
+    width: 100%;
+    order: 1;
+  }
+
+  .back-button {
+    padding: 10px 14px;
+    font-size: 13px;
+  }
+
+  .editor-top-right {
+    width: 100%;
+    order: 3;
+    justify-content: space-between;
+  }
+
+  .editor-title-input {
+    order: 2;
+    width: 100%;
+    padding: 12px;
+    font-size: 16px;
+  }
+
+  .editor-actions {
+    gap: 8px;
+  }
+
+  .editor-actions button {
+    padding: 10px 14px;
+    font-size: 12px;
+  }
+
+  /* Editor content mobile */
+  .editor-content {
+    padding: 16px 12px;
+  }
+
+  .tiptap {
+    font-size: 15px;
+    padding: 12px;
+  }
+
+  /* AI Generate modal mobile */
+  .generate-modal .modal-content {
+    max-width: 95%;
+    margin: 16px;
+  }
+
+  .generate-modal .modal-body {
+    padding: 20px 16px;
+  }
+
+  .generate-form {
+    gap: 16px;
+  }
+
+  .form-group label {
+    font-size: 13px;
+  }
+
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    padding: 12px;
+    font-size: 14px;
+  }
+
+  /* Name prompt modal mobile */
+  .name-prompt .modal-content {
+    max-width: 90%;
+  }
+
+  /* View note modal mobile */
+  .view-modal {
+    padding: 16px 12px;
+  }
+
+  .view-modal-header {
+    padding: 16px 12px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .view-modal-header h2 {
+    font-size: 18px;
+    width: 100%;
+  }
+
+  .view-modal-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .view-modal-body {
+    padding: 16px 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  .notes-header {
+    padding: 12px 10px;
+  }
+
+  .notes-header h2 {
+    font-size: 18px;
+  }
+
+  .notes-count {
+    font-size: 12px;
+  }
+
+  .action-button {
+    padding: 10px 12px;
+    font-size: 12px;
+  }
+
+  .action-button span {
+    display: none;
+  }
+
+  .action-button svg {
+    margin: 0;
+  }
+
+  /* Make buttons icon-only on very small screens */
+  .action-button.primary::after {
+    content: '+';
+    font-size: 18px;
+    font-weight: bold;
+  }
+
+  .action-button.ai-generate {
+    min-width: 44px;
+    justify-content: center;
+  }
+
+  .notes-grid {
+    padding: 12px 10px;
+    gap: 12px;
+  }
+
+  .note-card-header {
+    padding: 12px;
+  }
+
+  .note-card-header h3 {
+    font-size: 14px;
+  }
+
+  .note-card-actions button {
+    padding: 6px;
+    min-width: 32px;
+    min-height: 32px;
+  }
+
+  .note-card-content {
+    padding: 12px;
+  }
+
+  .note-card-footer {
+    padding: 10px 12px;
+    font-size: 10px;
+  }
+
+  .editor-top-bar {
+    padding: 10px;
+  }
+
+  .back-button {
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+
+  .editor-title-input {
+    padding: 10px;
+    font-size: 15px;
+  }
+
+  .editor-actions button {
+    padding: 8px 12px;
+    font-size: 11px;
+  }
+
+  .editor-content {
+    padding: 12px 10px;
+  }
+
+  .tiptap {
+    font-size: 14px;
+    padding: 10px;
+  }
+}
+
+/* Landscape orientation adjustments */
+@media (max-width: 768px) and (orientation: landscape) {
+  .notes-header {
+    flex-direction: row;
+    justify-content: space-between;
+  }
+
+  .notes-header-right {
+    flex-direction: row;
+    width: auto;
+    flex-wrap: wrap;
+  }
+
+  .notes-search {
+    width: auto;
+    min-width: 200px;
+  }
+
+  .action-button span {
+    display: inline;
+  }
+}
+
+/* ==================== NOTES ACTION BUTTONS ENHANCEMENT ==================== */
+
+/* AI Generate button special styling */
+.action-button.ai-generate {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+.action-button.ai-generate:hover {
+  background: linear-gradient(135deg, #5568d3 0%, #653a8e 100%);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+/* Ensure buttons have proper spacing on desktop */
+@media (min-width: 769px) {
+  .notes-header-right {
+    flex-direction: row;
+    flex-wrap: nowrap;
+  }
+
+  .notes-actions-row {
+    display: flex;
+    gap: 12px;
+  }
+}
+
+/* Icon button (filter) styling */
+.icon-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+  min-width: 40px;
+  min-height: 40px;
+}
+
+.icon-button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--accent-primary);
+}
+
+.icon-button.active {
+  background: var(--accent-primary);
+  color: white;
+  border-color: var(--accent-primary);
+}
+
+/* Notes header left section */
+.notes-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

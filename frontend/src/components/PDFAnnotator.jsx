@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { FiFileText, FiMessageSquare, FiX, FiLoader, FiChevronLeft, FiChevronRight, FiZoomIn, FiZoomOut, FiPlus, FiZap, FiBookmark, FiBook, FiClock, FiCheck } from 'react-icons/fi'
+import { FiFileText, FiMessageSquare, FiX, FiLoader, FiChevronLeft, FiChevronRight, FiZoomIn, FiZoomOut, FiPlus, FiZap, FiBookmark, FiBook, FiClock, FiCheck, FiSidebar } from 'react-icons/fi'
 import axios from 'axios'
 import { Document, Page, pdfjs } from 'react-pdf'
 import ReactMarkdown from 'react-markdown'
@@ -59,6 +59,9 @@ function PDFAnnotator({ documents, notebookId, selectedDoc, setSelectedDoc }) {
   const [bookmarkTitle, setBookmarkTitle] = useState('')
   const [bookmarkNote, setBookmarkNote] = useState('')
   const [showBookmarkForm, setShowBookmarkForm] = useState(false)
+
+  // Sidebar visibility
+  const [sidebarVisible, setSidebarVisible] = useState(false)
 
   const pageRef = useRef(null)
   const pageStartTimeRef = useRef(null)
@@ -472,48 +475,52 @@ function PDFAnnotator({ documents, notebookId, selectedDoc, setSelectedDoc }) {
   return (
     <div className="pdf-annotator-container">
       <div className="pdf-toolbar">
-        <button className="toolbar-button" onClick={() => setSelectedDoc(null)}>
-          <FiX /> Close
-        </button>
-        <div className="pdf-title">
-          <FiFileText />
-          {selectedDoc.filename}
+        <div className="toolbar-left">
+          <button className="toolbar-button" onClick={() => setSelectedDoc(null)} title="Close PDF">
+            <FiX />
+          </button>
+          <button
+            className={`toolbar-button ${sidebarVisible ? 'active' : ''}`}
+            onClick={() => setSidebarVisible(!sidebarVisible)}
+            title="Toggle Sidebar"
+          >
+            <FiSidebar />
+          </button>
+          <div className="pdf-title">
+            <FiFileText />
+            {selectedDoc.filename}
+          </div>
         </div>
-        <div className="pdf-controls">
-          <button className="toolbar-button" onClick={() => setShowBookmarkForm(true)} title="Add Bookmark">
-            <FiBookmark />
+
+        <div className="toolbar-center">
+          <button className="toolbar-button" onClick={() => changePage(-1)} disabled={pageNumber <= 1}>
+            <FiChevronLeft />
           </button>
-          <button className="toolbar-button" onClick={() => setShowBookmarks(!showBookmarks)} title="View Bookmarks">
-            <FiBook />
-            {bookmarks.length > 0 && <span style={{fontSize: '10px', marginLeft: '2px'}}>({bookmarks.length})</span>}
+          <span className="page-info">
+            {pageNumber} / {numPages || '?'}
+          </span>
+          <button className="toolbar-button" onClick={() => changePage(1)} disabled={pageNumber >= numPages}>
+            <FiChevronRight />
           </button>
+        </div>
+
+        <div className="toolbar-right">
           {readingProgress && (
-            <span style={{ padding: '0 8px', fontSize: '11px', color: 'var(--text-secondary)' }} title="Reading Progress">
-              <FiClock size={12} /> {Math.round(readingProgress.completion_percentage || 0)}%
-            </span>
-          )}
-          {progressSaved && (
-            <span style={{ padding: '0 8px', fontSize: '11px', color: 'var(--accent-primary)', animation: 'fadeIn 0.3s' }}>
-              <FiCheck size={12} /> Saved
+            <span className="progress-indicator" title="Reading Progress">
+              <FiClock size={14} /> {Math.round(readingProgress.completion_percentage || 0)}%
             </span>
           )}
           <button className="toolbar-button" onClick={zoomOut} title="Zoom Out">
             <FiZoomOut />
           </button>
-          <span style={{ padding: '0 8px', fontSize: '13px' }}>
+          <span className="zoom-level">
             {Math.round(scale * 100)}%
           </span>
           <button className="toolbar-button" onClick={zoomIn} title="Zoom In">
             <FiZoomIn />
           </button>
-          <button className="toolbar-button" onClick={() => changePage(-1)} disabled={pageNumber <= 1}>
-            <FiChevronLeft />
-          </button>
-          <span style={{ padding: '0 8px', fontSize: '13px' }}>
-            {pageNumber} / {numPages || '?'}
-          </span>
-          <button className="toolbar-button" onClick={() => changePage(1)} disabled={pageNumber >= numPages}>
-            <FiChevronRight />
+          <button className="toolbar-button" onClick={() => setShowBookmarkForm(true)} title="Add Bookmark">
+            <FiBookmark />
           </button>
         </div>
       </div>
@@ -574,24 +581,32 @@ function PDFAnnotator({ documents, notebookId, selectedDoc, setSelectedDoc }) {
       )}
 
       <div className="pdf-content-wrapper">
-        <div className="pdf-sidebar">
+        {/* Sidebar overlay - click to close */}
+        {sidebarVisible && (
+          <div
+            className="pdf-sidebar-overlay"
+            onClick={() => setSidebarVisible(false)}
+          />
+        )}
+
+        <div className={`pdf-sidebar ${sidebarVisible ? 'visible' : ''}`}>
           {/* Sidebar Tabs */}
           <div className="sidebar-tabs">
             <button
               className={`sidebar-tab ${!showAnalyzer && !showBookmarks ? 'active' : ''}`}
-              onClick={() => { setShowAnalyzer(false); setShowBookmarks(false); }}
+              onClick={() => { setShowAnalyzer(false); setShowBookmarks(false); setSidebarVisible(true); }}
             >
               <FiFileText /> Annotations ({annotations.length})
             </button>
             <button
               className={`sidebar-tab ${showBookmarks ? 'active' : ''}`}
-              onClick={() => { setShowAnalyzer(false); setShowBookmarks(true); }}
+              onClick={() => { setShowAnalyzer(false); setShowBookmarks(true); setSidebarVisible(true); }}
             >
               <FiBookmark /> Bookmarks ({bookmarks.length})
             </button>
             <button
               className={`sidebar-tab ${showAnalyzer ? 'active' : ''}`}
-              onClick={() => { setShowAnalyzer(true); setShowBookmarks(false); }}
+              onClick={() => { setShowAnalyzer(true); setShowBookmarks(false); setSidebarVisible(true); }}
             >
               <FiZap /> AI Analyzer
             </button>

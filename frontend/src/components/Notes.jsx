@@ -754,48 +754,35 @@ function Notes({ documents, selectedDocIds, notebookId }) {
           <span className="notes-count">({filteredNotes.length})</span>
         </div>
         <div className="notes-header-right">
-          <div className="notes-search">
-            <FiSearch className="search-icon" />
-            <input
-              type="text"
-              placeholder="Search notes..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="search-input"
-            />
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', width: '100%' }}>
+            <div className="notes-search">
+              <FiSearch className="search-icon" />
+              <input
+                type="text"
+                placeholder="Search notes..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="search-input"
+              />
+            </div>
+
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className={`icon-button ${showFilters ? 'active' : ''}`}
+              title="Filters"
+            >
+              <FiFilter />
+            </button>
           </div>
 
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className={`icon-button ${showFilters ? 'active' : ''}`}
-            title="Filters"
-          >
-            <FiFilter />
-          </button>
-
-          {/* <div className="view-toggle">
-            <button
-              onClick={() => setViewMode('grid')}
-              className={viewMode === 'grid' ? 'active' : ''}
-              title="Grid View"
-            >
-              <FiGrid />
+          <div className="notes-actions-row">
+            <button onClick={openNamePrompt} className="action-button primary">
+              <FiPlus /> <span>New Note</span>
             </button>
-            {/* <button
-              onClick={() => setViewMode('list')}
-              className={viewMode === 'list' ? 'active' : ''}
-              title="List View"
-            >
-              <FiList />
+            <button onClick={() => setShowGenerateModal(true)} className="action-button ai-generate">
+              <FaRobot /> <span>AI Notes</span>
             </button>
-          </div> */}
-
-          <button onClick={openNamePrompt} className="action-button primary">
-            <FiPlus /> New Note
-          </button>
-          <button onClick={() => setShowGenerateModal(true)} className="action-button ai-generate">
-            <FaRobot /> AI Notes
-          </button>
+          </div>
         </div>
       </div>
 
