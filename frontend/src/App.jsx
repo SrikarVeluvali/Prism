@@ -19,7 +19,7 @@
  */
 
 import { useState, useRef, useEffect } from 'react'
-import { FiUpload, FiSend, FiTrash2, FiFile, FiMessageSquare, FiAward, FiFileText, FiArrowLeft, FiEdit3, FiEye, FiMic, FiTrendingUp, FiAlertTriangle, FiCheck, FiLogOut, FiBarChart2, FiCheckCircle } from 'react-icons/fi'
+import { FiUpload, FiSend, FiTrash2, FiFile, FiMessageSquare, FiAward, FiFileText, FiArrowLeft, FiEdit3, FiEye, FiMic, FiTrendingUp, FiAlertTriangle, FiCheck, FiLogOut, FiBarChart2, FiCheckCircle, FiMenu, FiX } from 'react-icons/fi'
 import axios from 'axios'
 import FileUploadModal from './components/FileUploadModal'
 import Quiz from './components/Quiz'
@@ -55,6 +55,7 @@ function AppContent() {
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [showUploadModal, setShowUploadModal] = useState(false)
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false)
   const [deleteConfirmation, setDeleteConfirmation] = useState({
     show: false,
     type: null, // 'single' or 'clearAll'
@@ -368,6 +369,21 @@ function AppContent() {
     }
   }
 
+  const toggleMobileSidebar = () => {
+    setIsMobileSidebarOpen(!isMobileSidebarOpen)
+  }
+
+  const closeMobileSidebar = () => {
+    setIsMobileSidebarOpen(false)
+  }
+
+  // Close mobile sidebar when mode changes
+  const handleModeChange = (newMode) => {
+    setMode(newMode)
+    setAssessmentType(null)
+    closeMobileSidebar()
+  }
+
   // Show Library if no notebook is selected
   // Show loading state while checking authentication
   if (loading) {
@@ -394,8 +410,23 @@ function AppContent() {
 
   return (
     <div className="app">
+      {/* Mobile Menu Toggle */}
+      <button
+        className={`mobile-menu-toggle ${isMobileSidebarOpen ? 'open' : ''}`}
+        onClick={toggleMobileSidebar}
+        aria-label="Toggle menu"
+      >
+        {isMobileSidebarOpen ? <FiX size={24} /> : <FiMenu size={24} />}
+      </button>
+
+      {/* Mobile Overlay */}
+      <div
+        className={`mobile-overlay ${isMobileSidebarOpen ? 'active' : ''}`}
+        onClick={closeMobileSidebar}
+      />
+
       <div className="app-body">
-        <div className="sidebar">
+        <div className={`sidebar ${isMobileSidebarOpen ? 'open' : ''}`}>
         <div className="sidebar-header">
           <button
             onClick={clearNotebook}
@@ -423,70 +454,49 @@ function AppContent() {
         <div className="mode-switcher">
           <button
             className={`mode-button ${mode === 'chat' ? 'active' : ''}`}
-            onClick={() => {
-              setMode('chat')
-              setAssessmentType(null)
-            }}
+            onClick={() => handleModeChange('chat')}
           >
             <FiMessageSquare />
             Chat
           </button>
           <button
             className={`mode-button ${mode === 'notes' ? 'active' : ''}`}
-            onClick={() => {
-              setMode('notes')
-              setAssessmentType(null)
-            }}
+            onClick={() => handleModeChange('notes')}
           >
             <FiEdit3 />
             Notes
           </button>
           <button
             className={`mode-button ${mode === 'pdf' ? 'active' : ''}`}
-            onClick={() => {
-              setMode('pdf')
-              setAssessmentType(null)
-            }}
+            onClick={() => handleModeChange('pdf')}
           >
             <FiEye />
             View
           </button>
           <button
             className={`mode-button ${mode === 'assessment' ? 'active' : ''}`}
-            onClick={() => {
-              setMode('assessment')
-              setAssessmentType(null)
-            }}
+            onClick={() => handleModeChange('assessment')}
           >
             <FiAward />
             Assessment
           </button>
           <button
             className={`mode-button ${mode === 'interview' ? 'active' : ''}`}
-            onClick={() => {
-              setMode('interview')
-              setAssessmentType(null)
-            }}
+            onClick={() => handleModeChange('interview')}
           >
             <FiMic />
             Interview
           </button>
           <button
             className={`mode-button ${mode === 'doomscroll' ? 'active' : ''}`}
-            onClick={() => {
-              setMode('doomscroll')
-              setAssessmentType(null)
-            }}
+            onClick={() => handleModeChange('doomscroll')}
           >
             <FiTrendingUp />
             Scroll
           </button>
           <button
             className={`mode-button ${mode === 'progress' ? 'active' : ''}`}
-            onClick={() => {
-              setMode('progress')
-              setAssessmentType(null)
-            }}
+            onClick={() => handleModeChange('progress')}
           >
             <FiBarChart2 />
             Progress

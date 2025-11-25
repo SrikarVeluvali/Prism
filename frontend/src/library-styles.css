@@ -690,14 +690,63 @@
 
 @media (max-width: 768px) {
   .library-header {
-    padding: 20px 24px;
+    padding: 16px 20px;
     flex-direction: column;
-    gap: 16px;
+    gap: 12px;
     align-items: flex-start;
   }
 
+  .library-brand {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .btn-create {
+    padding: 10px 16px;
+    font-size: 13px;
+  }
+
+  .library-subheader {
+    padding: 12px;
+  }
+
+  .library-title-section {
+    padding-left: 20px;
+    padding-top: 8px;
+  }
+
+  .library-title {
+    font-size: 20px;
+  }
+
+  .library-description {
+    font-size: 11px;
+  }
+
   .library-main {
-    padding: 32px 24px;
+    padding: 24px 16px;
+  }
+
+  .library-empty-state {
+    padding: 60px 20px;
+    min-height: 50vh;
+  }
+
+  .empty-icon {
+    font-size: 56px;
+  }
+
+  .empty-title {
+    font-size: 20px;
+  }
+
+  .empty-description {
+    font-size: 14px;
+  }
+
+  .btn-create-first {
+    padding: 12px 20px;
+    font-size: 14px;
   }
 
   .bookshelf-shelf {
@@ -713,6 +762,21 @@
     height: 260px;
   }
 
+  .book-spine:hover {
+    transform: translateY(-8px);
+  }
+
+  .book-actions {
+    top: -44px;
+    gap: 4px;
+    padding: 4px;
+  }
+
+  .book-action-btn {
+    width: 36px;
+    height: 36px;
+  }
+
   .book-title {
     font-size: 12px;
   }
@@ -720,25 +784,141 @@
   .icon-grid,
   .color-grid {
     grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+  }
+
+  .icon-button,
+  .color-button {
+    min-height: 48px;
   }
 
   .modal-content {
-    max-width: 100%;
+    max-width: 95%;
+    margin: 20px;
+  }
+
+  .modal-header {
+    padding: 16px 20px;
+  }
+
+  .modal-title {
+    font-size: 18px;
+  }
+
+  .modal-body {
+    padding: 20px;
+  }
+
+  .modal-footer {
+    padding: 16px 20px;
+    flex-wrap: wrap;
+  }
+
+  .form-label {
+    font-size: 12px;
+  }
+
+  .form-input {
+    padding: 12px;
+    font-size: 14px;
+  }
+
+  .btn-primary,
+  .btn-secondary {
+    padding: 12px 20px;
+    font-size: 14px;
+    min-width: 120px;
+    flex: 1;
+  }
+
+  .notification-modal {
+    max-width: 90%;
+    padding: 24px;
+  }
+
+  .notification-icon {
+    width: 56px;
+    height: 56px;
+  }
+
+  .notification-title {
+    font-size: 18px;
+  }
+
+  .notification-message {
+    font-size: 13px;
+  }
+
+  .btn-danger {
+    padding: 12px 20px;
+    font-size: 14px;
   }
 }
 
 @media (max-width: 480px) {
+  .library-header {
+    padding: 12px 16px;
+  }
+
   .library-logo {
-    width: 40px;
-    height: 40px;
+    width: 36px;
+    height: 36px;
   }
 
   .library-brand-title {
-    font-size: 20px;
+    font-size: 18px;
+  }
+
+  .library-brand-subtitle {
+    font-size: 11px;
+  }
+
+  .btn-create {
+    padding: 8px 14px;
+    font-size: 12px;
+    gap: 6px;
+  }
+
+  .library-subheader {
+    padding: 10px;
+  }
+
+  .library-title-section {
+    padding-left: 16px;
+    padding-top: 6px;
+  }
+
+  .library-title {
+    font-size: 18px;
+  }
+
+  .library-description {
+    font-size: 10px;
   }
 
   .library-main {
-    padding: 24px 16px;
+    padding: 20px 12px;
+  }
+
+  .library-empty-state {
+    padding: 40px 16px;
+  }
+
+  .empty-icon {
+    font-size: 48px;
+  }
+
+  .empty-title {
+    font-size: 18px;
+  }
+
+  .empty-description {
+    font-size: 13px;
+  }
+
+  .btn-create-first {
+    padding: 10px 18px;
+    font-size: 13px;
   }
 
   .bookshelf-shelf {
@@ -747,13 +927,28 @@
 
   .notebooks-bookshelf {
     min-height: 240px;
-    gap: 3px;
+    gap: 4px;
   }
 
   .book-spine {
     width: 50px;
     height: 240px;
     padding: 12px 6px;
+  }
+
+  .book-spine:hover {
+    transform: translateY(-6px);
+  }
+
+  .book-actions {
+    top: -40px;
+    gap: 3px;
+    padding: 3px;
+  }
+
+  .book-action-btn {
+    width: 32px;
+    height: 32px;
   }
 
   .book-icon {
@@ -776,6 +971,67 @@
   .icon-grid,
   .color-grid {
     grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+  }
+
+  .icon-button,
+  .color-button {
+    min-height: 44px;
+  }
+
+  .modal-content {
+    margin: 16px;
+  }
+
+  .modal-header {
+    padding: 14px 16px;
+  }
+
+  .modal-title {
+    font-size: 16px;
+  }
+
+  .modal-body {
+    padding: 16px;
+  }
+
+  .modal-footer {
+    padding: 12px 16px;
+  }
+
+  .form-input {
+    padding: 10px;
+    font-size: 13px;
+  }
+
+  .btn-primary,
+  .btn-secondary {
+    padding: 10px 16px;
+    font-size: 13px;
+    min-width: 100px;
+  }
+
+  .notification-modal {
+    max-width: 92%;
+    padding: 20px;
+  }
+
+  .notification-icon {
+    width: 48px;
+    height: 48px;
+  }
+
+  .notification-title {
+    font-size: 16px;
+  }
+
+  .notification-message {
+    font-size: 12px;
+  }
+
+  .btn-danger {
+    padding: 10px 16px;
+    font-size: 13px;
   }
 }
 
